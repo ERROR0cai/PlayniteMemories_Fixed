@@ -1,5 +1,20 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" 
+<?xml version="1.0"?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!-- SharpMemories Settings View -->
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableAutoScreenshots">Enable automatic screenshots when a game starts</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_IntervalLabel">Interval (minutes):</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_OutputFolderLabel">Output folder:</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_BrowseButton">Browse...</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_MonitorExternalFolder">Monitor external screenshot folder (to copy Steam screenshots to the Playnite screenshots folder)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_MonitorFolderLabel">Monitor folder:</sys:String>
+
+    <sys:String x:Key="LOCSharpMemories_Settings_HotkeyTitle">Screenshot Hotkey</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableHotkey">Enable screenshot hotkey</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_CurrentHotkeyLabel">Current Hotkey:</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuppressHotkey">Suppress hotkey from reaching the application (prevents F12 from opening browser dev tools, etc.)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_HotkeyLibrariesLabel">Enable hotkey for these libraries:</sys:String>
 
 </ResourceDictionary>

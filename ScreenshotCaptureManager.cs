@@ -28,7 +28,6 @@ namespace SharpMemories
         {
             lock (captureLock)
             {
-                // stop any existing capture
                 if (captureCts != null)
                 {
                     logger.Debug("Stopping existing capture before starting new one");
@@ -77,12 +76,11 @@ namespace SharpMemories
             logger.Info($"On-demand screenshot capture triggered for '{gameTitle}'");
             CaptureOnce(processId, gameTitle);
 
-            // Play a sound
             try {
                 System.Media.SystemSounds.Asterisk.Play();
             }
-            catch (Exception e) 
-            { 
+            catch (Exception e)
+            {
                 logger.Error(e, "Error playing sound on screenshot capture");
             }
         }
@@ -192,7 +190,12 @@ namespace SharpMemories
 
                 try { Directory.CreateDirectory(outFolder); } catch (Exception ex) { logger.Error(ex, "Failed to create output folder"); }
 
-                var filename = Path.Combine(outFolder, $"{safeTitle}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                // ★★★ 修改文件名格式 ★★★
+                // 原格式: {safeTitle}_{yyyyMMdd_HHmmss}.png
+                // 新格式: {safeTitle}_{yyyy-MM-dd_HH-mm-ss}_Memories.png
+                var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                var filename = Path.Combine(outFolder, $"{safeTitle}_{timestamp}_Memories.png");
+
                 bmp.Save(filename, System.Drawing.Imaging.ImageFormat.Png);
                 bmp.Dispose();
                 logger.Info($"Saved screenshot: {filename}");

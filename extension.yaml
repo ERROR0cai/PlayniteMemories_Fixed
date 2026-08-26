@@ -1,7 +1,7 @@
-﻿Id: GameMemories
-Name: Playnite Memories
-Author: John Wuller
-Version: 1.0.1
+﻿Id: GameMemories_Fixed by ERROR0cai
+Name: Playnite Memories_Fixed by ERROR0cai
+Author: ERROR0cai (based on John Wuller's SharpMemories)
+Version: 1.0.1.233
 Module: SharpMemories.dll
 Type: GenericPlugin
 Icon: icon.png
