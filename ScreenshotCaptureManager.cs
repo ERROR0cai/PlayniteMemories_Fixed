@@ -13,15 +13,24 @@ namespace SharpMemories
         private static readonly ILogger logger = LogManager.GetLogger();
 
         private readonly SharpMemoriesSettingsViewModel settings;
+        private readonly SharpMemories plugin;  // 👈 添加这一行
         private CancellationTokenSource captureCts;
         private Task captureTask;
         private int currentGameProcessId = 0;
         private string currentGameTitle = null;
         private readonly object captureLock = new object();
 
-        public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings)
+        // public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings)
+        // {
+        //     this.settings = settings;
+        // }
+
+        // 👇 修改构造函数
+        public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings, SharpMemories plugin)
         {
             this.settings = settings;
+            this.plugin = plugin;  // 👈 添加这一行
+            this.plugin = plugin;
         }
 
         public void StartCaptureForProcess(int processId, string gameTitle)
@@ -190,15 +199,38 @@ namespace SharpMemories
 
                 try { Directory.CreateDirectory(outFolder); } catch (Exception ex) { logger.Error(ex, "Failed to create output folder"); }
 
-                // ★★★ 修改文件名格式 ★★★
-                // 原格式: {safeTitle}_{yyyyMMdd_HHmmss}.png
-                // 新格式: {safeTitle}_{yyyy-MM-dd_HH-mm-ss}_Memories.png
-                var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                var filename = Path.Combine(outFolder, $"{safeTitle}_{timestamp}_Memories.png");
+                // ★★★ 使用自定义重命名模式 ★★★
+                var now = DateTime.Now;
+                var pattern = settings?.Settings?.RenamePattern;
+
+                // 如果未设置或为空，使用默认模式
+                if (string.IsNullOrWhiteSpace(pattern))
+                {
+                    pattern = "{game}_{datetime}";
+                }
+
+                // 替换令牌
+                var result = pattern
+                    .Replace("{game}", safeTitle)
+                    .Replace("{date}", now.ToString("yyyy-MM-dd"))
+                    .Replace("{time}", now.ToString("HH_mm_ss"))
+                    .Replace("{datetime}", now.ToString("yyyy-MM-dd_HH_mm_ss"))
+                    .Replace("{original}", safeTitle);  // 对于本插件，original 等同于 game
+
+                // 确保文件名安全（移除非法字符）
+                result = string.Concat(result.Split(Path.GetInvalidFileNameChars()));
+
+                var filename = Path.Combine(outFolder, result + ".png");
 
                 bmp.Save(filename, System.Drawing.Imaging.ImageFormat.Png);
                 bmp.Dispose();
                 logger.Info($"Saved screenshot: {filename}");
+
+                // 👇 新增：截图保存后刷新 ScreenshotsVisualizer
+                if (plugin != null && !string.IsNullOrEmpty(gameTitle))
+                {
+                    plugin.NotifyScreenshotsVisualizerRefresh(gameTitle);
+                }
             }
             catch (Exception e)
             {

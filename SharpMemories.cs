@@ -1,6 +1,9 @@
 ﻿using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
+using Playnite.SDK.Models;      // 👈 新增
+using System.Linq;              // 👈 新增
+using System.Reflection;        // 👈 新增
 using System;
 using System.Windows.Controls;
 
@@ -9,6 +12,9 @@ namespace SharpMemories
     public class SharpMemories : GenericPlugin
     {
         private static readonly ILogger logger = LogManager.GetLogger();
+
+
+        private static readonly Guid ScreenshotsVisualizerId = Guid.Parse("c6c8276f-91bf-48e5-a1d1-4bee0b493488");// 👇 新增：ScreenshotsVisualizer GUID（与 GameSnap 保持一致）
 
         private SharpMemoriesSettingsViewModel settings { get; set; }
 
@@ -23,7 +29,7 @@ namespace SharpMemories
         {
             logger.Info("SharpMemories plugin initialized");
             settings = new SharpMemoriesSettingsViewModel(this);
-            screenshotCapture = new ScreenshotCaptureManager(settings);
+            screenshotCapture = new ScreenshotCaptureManager(settings, this);
             folderMonitor = new FolderMonitorManager(settings);
             keyboardHook = new KeyboardHookManager();
             Properties = new GenericPluginProperties
@@ -195,6 +201,45 @@ namespace SharpMemories
         public override UserControl GetSettingsView(bool firstRunSettings)
         {
             return new SharpMemoriesSettingsView();
+        }
+
+        /// <summary>
+        /// 通知 ScreenshotsVisualizer 刷新指定游戏的截图
+        /// 直接调用 SV 的 RefreshGameByName 方法
+        /// </summary>
+        public void NotifyScreenshotsVisualizerRefresh(string gameName)
+        {
+            try
+            {
+                // 检查是否启用 SV 刷新
+                if (settings?.Settings == null || !settings.Settings.EnableSVRefresh)
+                    return;
+
+                var sv = PlayniteApi.Addons.Plugins
+                    .FirstOrDefault(p => p.Id == ScreenshotsVisualizerId);
+                if (sv == null)
+                {
+                    logger.Debug("ScreenshotsVisualizer plugin not found, skipping refresh");
+                    return;
+                }
+
+                // 直接调用 SV 的 RefreshGameByName 方法
+                var method = sv.GetType().GetMethod("RefreshGameByName",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (method != null)
+                {
+                    method.Invoke(sv, new object[] { gameName });
+                    logger.Info($"ScreenshotsVisualizer refresh called for: {gameName}");
+                }
+                else
+                {
+                    logger.Debug("RefreshGameByName method not found in SV");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Debug($"ScreenshotsVisualizer refresh skipped: {ex.Message}");
+            }
         }
     }
 }

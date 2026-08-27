@@ -11,10 +11,18 @@
     <sys:String x:Key="LOCSharpMemories_Settings_MonitorExternalFolder">监控外部截图文件夹（将 Steam 截图复制到 Playnite 截图文件夹）</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_MonitorFolderLabel">监控文件夹：</sys:String>
 
+    <!-- 👇 新增 -->
+    <sys:String x:Key="LOCSharpMemories_Settings_RenamePattern">重命名模式</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePattern">可用令牌: {{game}} {{date}} {{time}} {{datetime}}</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePatternLabel">可用变量: {{game}} 游戏名, {{date}} 日期, {{time}} 时间, {{datetime}} 日期时间, {{original}} 原名</sys:String>
+
     <sys:String x:Key="LOCSharpMemories_Settings_HotkeyTitle">截图快捷键</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_EnableHotkey">启用截图快捷键</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_CurrentHotkeyLabel">当前快捷键：</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_SuppressHotkey">阻止快捷键传递到应用程序（防止 F12 打开浏览器开发工具等）</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_HotkeyLibrariesLabel">为以下库启用快捷键：</sys:String>
+
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableSVRefresh">截图后刷新 ScreenshotsVisualizer（默认是关闭游戏后刷新，开启后每次截图都刷新）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_EnableSVRefresh">启用后，每次截图保存后自动刷新 ScreenshotsVisualizer 插件（需已安装）</sys:String>
 
 </ResourceDictionary>

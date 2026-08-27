@@ -30,6 +30,22 @@ namespace SharpMemories
         private string monitorFolder = string.Empty;
         private bool enableMonitoring = true;
 
+        //  新增：重命名模式
+        private string _renamePattern = "{game}_{date}_{time}_Gamesnap";
+        public string RenamePattern
+        {
+            get => _renamePattern;
+            set => SetValue(ref _renamePattern, value);
+        }
+
+        // 👇 新增：是否启用 ScreenshotsVisualizer 刷新
+        private bool _enableSVRefresh = false;
+        public bool EnableSVRefresh
+        {
+            get => _enableSVRefresh;
+            set => SetValue(ref _enableSVRefresh, value);
+        }
+
         // Hotkey settings
         private bool enableHotkey = true;
         private Key hotkeyKey = Key.F12;

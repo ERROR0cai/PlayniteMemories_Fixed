@@ -21,6 +21,22 @@
             <TextBox x:Name="OutputFolderText" Width="300" Text="{Binding Settings.OutputFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
             <Button Content="{DynamicResource LOCSharpMemories_Settings_BrowseButton}" Margin="6,0,0,0" Click="BrowseOutputFolder_Click" />
         </StackPanel>
+        <!-- Rename pattern input -->
+        <StackPanel Orientation="Vertical" Margin="0,6,0,6">
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_RenamePattern}" Margin="0,0,0,4"/>
+            <TextBox Text="{Binding Settings.RenamePattern, UpdateSourceTrigger=PropertyChanged}"
+                    Width="300"
+                    HorizontalAlignment="Left"
+                    ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_RenamePattern}"/>
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_Tip_RenamePatternLabel}"
+                    Foreground="Gray" FontSize="11"
+                    TextWrapping="Wrap" Margin="0,4,0,0"/>
+        </StackPanel>
+        <!-- 👇 新增：ScreenshotsVisualizer 刷新选项 -->
+        <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableSVRefresh}"
+                IsChecked="{Binding Settings.EnableSVRefresh}"
+                Margin="0,6,0,6"
+                ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_EnableSVRefresh}"/>
         <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_MonitorExternalFolder}" IsChecked="{Binding Settings.EnableMonitoring}" Margin="0,6,0,0"/>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" IsEnabled="{Binding Settings.EnableMonitoring}">
             <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_MonitorFolderLabel}" VerticalAlignment="Center" Margin="0,6,6,6"/>
