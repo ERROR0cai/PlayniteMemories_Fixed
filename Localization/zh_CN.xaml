@@ -4,7 +4,7 @@
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <!-- SharpMemories Settings View -->
-    <sys:String x:Key="LOCSharpMemories_Settings_EnableAutoScreenshots">游戏启动时自动截图</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableAutoScreenshots">启用自动截图功能</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_IntervalLabel">间隔（分钟）：</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_OutputFolderLabel">输出文件夹：</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_BrowseButton">浏览...</sys:String>
@@ -13,7 +13,7 @@
 
     <!-- 👇 新增 -->
     <sys:String x:Key="LOCSharpMemories_Settings_RenamePattern">重命名模式</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePattern">可用令牌: {{game}} {{date}} {{time}} {{datetime}}</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePattern">可用变量: {{game}} {{date}} {{time}} {{datetime}}</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePatternLabel">可用变量: {{game}} 游戏名, {{date}} 日期, {{time}} 时间, {{datetime}} 日期时间, {{original}} 原名</sys:String>
 
     <sys:String x:Key="LOCSharpMemories_Settings_HotkeyTitle">截图快捷键</sys:String>
@@ -25,4 +25,22 @@
     <sys:String x:Key="LOCSharpMemories_Settings_EnableSVRefresh">截图后刷新 ScreenshotsVisualizer（默认是关闭游戏后刷新，开启后每次截图都刷新）</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_Tip_EnableSVRefresh">启用后，每次截图保存后自动刷新 ScreenshotsVisualizer 插件（需已安装）</sys:String>
 
+    <!-- ========== 新增：通知设置 ========== -->
+    <sys:String x:Key="LOCSharpMemories_Settings_NotificationTitle">通知设置</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableNotifications">启用截图通知</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_NotificationStyle">通知样式</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_NotificationHint">💡 Windows 通知需要 Windows 10/11 系统支持</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Notification_AutoCapture">自动截图</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Notification_ManualCapture">手动截图</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Notification_ScreenshotSaved">截图已保存</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Notification_Error">截图失败</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AutoNotification">自动截图通知</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_ManualNotification">手动截图通知</sys:String>
+
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixTitle">截图后缀设置</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AutoSuffix">自动截图后缀</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_ManualSuffix">手动截图后缀</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixHint">💡 后缀会自动添加在文件名末尾、扩展名之前</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixPlaceholder">例如: _auto</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixEmptyHint">（留空则不添加）</sys:String>
 </ResourceDictionary>

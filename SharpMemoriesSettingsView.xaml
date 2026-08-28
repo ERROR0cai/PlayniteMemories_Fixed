@@ -32,6 +32,30 @@
                     Foreground="Gray" FontSize="11"
                     TextWrapping="Wrap" Margin="0,4,0,0"/>
         </StackPanel>
+
+        <!-- 👇 新增：截图后缀设置 -->
+        <StackPanel Orientation="Vertical" Margin="0,6,0,6">
+            <TextBlock Text="截图后缀设置（将添加到文件名末尾）" FontWeight="Bold" Margin="0,0,0,4"/>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                <TextBlock Text="自动截图后缀:" VerticalAlignment="Center" Width="110"/>
+                <TextBox Text="{Binding Settings.AutoScreenshotSuffix, UpdateSourceTrigger=PropertyChanged}"
+                        Width="150"
+                        HorizontalAlignment="Left"
+                        ToolTip="例如: _auto"/>
+                <TextBlock Text="（留空则不添加）" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                <TextBlock Text="手动截图后缀:" VerticalAlignment="Center" Width="110"/>
+                <TextBox Text="{Binding Settings.ManualScreenshotSuffix, UpdateSourceTrigger=PropertyChanged}"
+                        Width="150"
+                        HorizontalAlignment="Left"
+                        ToolTip="例如: _manual"/>
+                <TextBlock Text="（留空则不添加）" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+            <TextBlock Text="💡 后缀会自动添加在文件名末尾、扩展名之前"
+                    Foreground="Gray" FontSize="11"
+                    Margin="0,4,0,0"/>
+        </StackPanel>
         <!-- 👇 新增：ScreenshotsVisualizer 刷新选项 -->
         <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableSVRefresh}"
                 IsChecked="{Binding Settings.EnableSVRefresh}"
@@ -44,7 +68,33 @@
             <Button Content="{DynamicResource LOCSharpMemories_Settings_BrowseButton}" Margin="6,0,0,0" Click="BrowseMonitorFolder_Click" />
         </StackPanel>
 
+        <!-- 👇 新增：通知设置区域 -->
         <Separator Margin="0,12,0,12"/>
+
+        <TextBlock Text="通知设置" FontWeight="Bold" Margin="0,0,0,6"/>
+
+        <CheckBox Content="启用通知" IsChecked="{Binding Settings.EnableNotifications}" Margin="0,0,0,6"/>
+
+        <StackPanel Margin="20,0,0,6" IsEnabled="{Binding Settings.EnableNotifications}">
+            <CheckBox Content="自动截图通知" IsChecked="{Binding Settings.EnableAutoScreenshotNotification}" Margin="0,2"/>
+            <CheckBox Content="手动截图通知" IsChecked="{Binding Settings.EnableManualScreenshotNotification}" Margin="0,2"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6"
+                    IsEnabled="{Binding Settings.EnableNotifications}">
+            <TextBlock Text="通知样式:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox
+                ItemsSource="{Binding Settings.NotificationStyleOptions}"
+                DisplayMemberPath="DisplayName"
+                SelectedValuePath="Value"
+                SelectedValue="{Binding Settings.NotificationStyle}"
+                Width="150"
+                VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <TextBlock Text="💡 Windows 通知需要 Windows 10/11 系统支持"
+                   Foreground="Gray" FontSize="11"
+                   Margin="0,2,0,6"/>
 
         <!-- Hotkey Settings -->
         <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_HotkeyTitle}" FontWeight="Bold" Margin="0,0,0,6"/>

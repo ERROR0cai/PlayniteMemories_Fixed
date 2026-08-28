@@ -110,6 +110,77 @@ namespace SharpMemories
 
             return string.Join(" + ", parts);
         }
+
+        // ========== 新增：截图后缀设置 ==========
+
+        private string _autoScreenshotSuffix = "";   // 自动截图后缀（默认为空）
+        private string _manualScreenshotSuffix = ""; // 手动截图后缀（默认为空）
+
+        /// <summary>
+        /// 自动截图额外后缀（例如 "_Auto"），默认为空
+        /// </summary>
+        public string AutoScreenshotSuffix
+        {
+            get => _autoScreenshotSuffix;
+            set => SetValue(ref _autoScreenshotSuffix, value ?? "");  // null 转换为空字符串
+        }
+
+        /// <summary>
+        /// 手动截图额外后缀（例如 "_Manual"），默认为空
+        /// </summary>
+        public string ManualScreenshotSuffix
+        {
+            get => _manualScreenshotSuffix;
+            set => SetValue(ref _manualScreenshotSuffix, value ?? "");
+        }
+
+        // ========== 新增：通知设置 ==========
+
+        private bool _enableNotifications = true;
+        private bool _enableAutoScreenshotNotification = true;  // 👈 新增
+        private bool _enableManualScreenshotNotification = true; // 👈 新增
+        private NotificationStyles _notificationStyle = NotificationStyles.Toast;
+
+        public bool EnableNotifications
+        {
+            get => _enableNotifications;
+            set => SetValue(ref _enableNotifications, value);
+        }
+
+        // 👇 新增：自动截图通知开关
+        public bool EnableAutoScreenshotNotification
+        {
+            get => _enableAutoScreenshotNotification;
+            set => SetValue(ref _enableAutoScreenshotNotification, value);
+        }
+
+        // 👇 新增：手动截图通知开关
+        public bool EnableManualScreenshotNotification
+        {
+            get => _enableManualScreenshotNotification;
+            set => SetValue(ref _enableManualScreenshotNotification, value);
+        }
+
+        public NotificationStyles NotificationStyle
+        {
+            get => _notificationStyle;
+            set => SetValue(ref _notificationStyle, value);
+        }
+
+        // 👇 添加 [DontSerialize] 属性，防止被保存到 JSON
+        [DontSerialize]
+        public System.Collections.Generic.List<NotificationStyleItem> NotificationStyleOptions { get; } = new System.Collections.Generic.List<NotificationStyleItem>
+        {
+            new NotificationStyleItem { Value = NotificationStyles.Toast, DisplayName = "Windows 通知" },
+            new NotificationStyleItem { Value = NotificationStyles.Playnite, DisplayName = "Playnite 通知" }
+        };
+    }
+
+    // 通知样式项类
+    public class NotificationStyleItem
+    {
+        public NotificationStyles Value { get; set; }
+        public string DisplayName { get; set; }
     }
 
     public class SharpMemoriesSettingsViewModel : ObservableObject, ISettings

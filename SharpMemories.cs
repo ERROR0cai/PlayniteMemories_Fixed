@@ -1,9 +1,9 @@
 ﻿using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
-using Playnite.SDK.Models;      // 👈 新增
-using System.Linq;              // 👈 新增
-using System.Reflection;        // 👈 新增
+using Playnite.SDK.Models;
+using System.Linq;
+using System.Reflection;
 using System;
 using System.Windows.Controls;
 
@@ -13,8 +13,7 @@ namespace SharpMemories
     {
         private static readonly ILogger logger = LogManager.GetLogger();
 
-
-        private static readonly Guid ScreenshotsVisualizerId = Guid.Parse("c6c8276f-91bf-48e5-a1d1-4bee0b493488");// 👇 新增：ScreenshotsVisualizer GUID（与 GameSnap 保持一致）
+        private static readonly Guid ScreenshotsVisualizerId = Guid.Parse("c6c8276f-91bf-48e5-a1d1-4bee0b493488");
 
         private SharpMemoriesSettingsViewModel settings { get; set; }
 
@@ -23,15 +22,27 @@ namespace SharpMemories
         private FolderMonitorManager folderMonitor;
         private KeyboardHookManager keyboardHook;
 
+        // 通知处理器
+        private MessagesHandler messagesHandler;
+
         public override Guid Id { get; } = Guid.Parse("f6e5e286-47b0-4fa9-bc5d-2c17587d215d");
+
+        // 公共属性供其他类访问
+        public MessagesHandler MessagesHandler => messagesHandler;
 
         public SharpMemories(IPlayniteAPI api) : base(api)
         {
             logger.Info("SharpMemories plugin initialized");
             settings = new SharpMemoriesSettingsViewModel(this);
-            screenshotCapture = new ScreenshotCaptureManager(settings, this);
+
+            // 初始化 MessagesHandler
+            messagesHandler = new MessagesHandler(PlayniteApi, settings.Settings);
+
+            // 传递 messagesHandler 给 ScreenshotCaptureManager
+            screenshotCapture = new ScreenshotCaptureManager(settings, this, messagesHandler);
             folderMonitor = new FolderMonitorManager(settings);
             keyboardHook = new KeyboardHookManager();
+
             Properties = new GenericPluginProperties
             {
                 HasSettings = true
@@ -64,37 +75,45 @@ namespace SharpMemories
                 var gameName = args?.Game?.Name ?? "Unknown";
                 logger.Info($"OnGameStarted event received for game: {gameName}");
 
-                if (settings?.Settings == null || !settings.Settings.Enabled)
+                // ============================================================
+                // 1. 自动截图功能 - 由 Enabled CheckBox 控制
+                // ============================================================
+                if (settings?.Settings != null && settings.Settings.Enabled)
                 {
-                    logger.Info("Plugin is disabled or settings are null, skipping screenshot capture");
-                    return;
-                }
-
-                if (settings.Settings.OutputFolder != null)
-                {
-                    var pid = 0;
-                    try
+                    if (settings.Settings.OutputFolder != null)
                     {
-                        pid = args?.StartedProcessId ?? 0;
-                    }
-                    catch { pid = 0; }
+                        var pid = 0;
+                        try
+                        {
+                            pid = args?.StartedProcessId ?? 0;
+                        }
+                        catch { pid = 0; }
 
-                    var title = args?.Game?.Name ?? "unknown";
-                    logger.Info($"Starting capture loop for '{title}' (pid={pid})");
-                    screenshotCapture.StartCaptureForProcess(pid, title);
+                        var title = args?.Game?.Name ?? "unknown";
+                        logger.Info($"Starting capture loop for '{title}' (pid={pid})");
+                        screenshotCapture.StartCaptureForProcess(pid, title);
+                    }
+                    else
+                    {
+                        logger.Warn("Output folder is not configured, skipping screenshot capture");
+                    }
                 }
                 else
                 {
-                    logger.Warn("Output folder is not configured, skipping screenshot capture");
+                    logger.Info("Auto screenshot is disabled, skipping screenshot capture");
                 }
 
-                // Start monitoring the monitor folder if enabled
+                // ============================================================
+                // 2. 文件夹监控 - 由 EnableMonitoring 独立控制
+                // ============================================================
                 if (settings.Settings.EnableMonitoring && !string.IsNullOrWhiteSpace(settings.Settings.MonitorFolder))
                 {
                     folderMonitor.StartMonitoring(gameName);
                 }
 
-                // Register keyboard hotkey if enabled for this game's library
+                // ============================================================
+                // 3. 热键注册 - 由 EnableHotkey 独立控制（不受 Enabled 影响）
+                // ============================================================
                 if (ShouldEnableHotkeyForGame(args?.Game))
                 {
                     var pid = 0;
@@ -122,7 +141,6 @@ namespace SharpMemories
                 logger.Error(e, "Error in OnGameStarted");
             }
         }
-
 
         public override void OnGameStarting(OnGameStartingEventArgs args)
         {

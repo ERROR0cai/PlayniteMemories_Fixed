@@ -13,30 +13,27 @@ namespace SharpMemories
         private static readonly ILogger logger = LogManager.GetLogger();
 
         private readonly SharpMemoriesSettingsViewModel settings;
-        private readonly SharpMemories plugin;  // 👈 添加这一行
+        private readonly SharpMemories plugin;
+        private readonly MessagesHandler messagesHandler;  // 新增：通知处理器
         private CancellationTokenSource captureCts;
         private Task captureTask;
         private int currentGameProcessId = 0;
         private string currentGameTitle = null;
         private readonly object captureLock = new object();
 
-        // public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings)
-        // {
-        //     this.settings = settings;
-        // }
-
-        // 👇 修改构造函数
-        public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings, SharpMemories plugin)
+        // 构造函数（修改）
+        public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings, SharpMemories plugin, MessagesHandler messagesHandler)
         {
             this.settings = settings;
-            this.plugin = plugin;  // 👈 添加这一行
             this.plugin = plugin;
+            this.messagesHandler = messagesHandler;  // 新增
         }
 
         public void StartCaptureForProcess(int processId, string gameTitle)
         {
             lock (captureLock)
             {
+                // stop any existing capture
                 if (captureCts != null)
                 {
                     logger.Debug("Stopping existing capture before starting new one");
@@ -83,9 +80,25 @@ namespace SharpMemories
         public void CaptureOnDemand(int processId, string gameTitle)
         {
             logger.Info($"On-demand screenshot capture triggered for '{gameTitle}'");
-            CaptureOnce(processId, gameTitle);
 
-            try {
+            // 修改：获取截图结果并显示通知
+            string savedPath = CaptureOnce(processId, gameTitle, false);
+
+            // 手动截图完成通知
+            if (!string.IsNullOrEmpty(savedPath) && messagesHandler != null)
+            {
+                try
+                {
+                    messagesHandler.ShowScreenshotNotification(gameTitle, savedPath, false);
+                }
+                catch (Exception ex)
+                {
+                    logger.Error(ex, "Failed to show notification for manual screenshot");
+                }
+            }
+
+            try
+            {
                 System.Media.SystemSounds.Asterisk.Play();
             }
             catch (Exception e)
@@ -119,7 +132,23 @@ namespace SharpMemories
 
                     if (token.IsCancellationRequested) break;
 
-                    await Task.Run(() => CaptureOnce(processId, gameTitle));
+                    await Task.Run(() =>
+                    {
+                        string savedPath = CaptureOnce(processId, gameTitle, true);
+
+                        // 自动截图完成通知
+                        if (!string.IsNullOrEmpty(savedPath) && messagesHandler != null)
+                        {
+                            try
+                            {
+                                messagesHandler.ShowScreenshotNotification(gameTitle, savedPath, true);
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Error(ex, "Failed to show notification for auto screenshot");
+                            }
+                        }
+                    });
                 }
 
                 logger.Info($"Capture loop ended for '{gameTitle}'");
@@ -130,8 +159,11 @@ namespace SharpMemories
             }
         }
 
-        private void CaptureOnce(int processId, string gameTitle)
+        // 修改：返回保存的文件路径
+        private string CaptureOnce(int processId, string gameTitle, bool isAutoCapture)
         {
+            string savedPath = null;
+
             try
             {
                 logger.Debug($"Starting screenshot capture for '{gameTitle}' (PID: {processId})");
@@ -183,7 +215,7 @@ namespace SharpMemories
                 if (bmp == null)
                 {
                     logger.Warn("Capture returned null bitmap");
-                    return;
+                    return null;
                 }
 
                 var outFolder = settings?.Settings?.OutputFolder;
@@ -199,42 +231,71 @@ namespace SharpMemories
 
                 try { Directory.CreateDirectory(outFolder); } catch (Exception ex) { logger.Error(ex, "Failed to create output folder"); }
 
-                // ★★★ 使用自定义重命名模式 ★★★
                 var now = DateTime.Now;
                 var pattern = settings?.Settings?.RenamePattern;
 
-                // 如果未设置或为空，使用默认模式
                 if (string.IsNullOrWhiteSpace(pattern))
                 {
                     pattern = "{game}_{datetime}";
                 }
 
-                // 替换令牌
                 var result = pattern
                     .Replace("{game}", safeTitle)
                     .Replace("{date}", now.ToString("yyyy-MM-dd"))
                     .Replace("{time}", now.ToString("HH_mm_ss"))
                     .Replace("{datetime}", now.ToString("yyyy-MM-dd_HH_mm_ss"))
-                    .Replace("{original}", safeTitle);  // 对于本插件，original 等同于 game
+                    .Replace("{original}", safeTitle);
 
-                // 确保文件名安全（移除非法字符）
                 result = string.Concat(result.Split(Path.GetInvalidFileNameChars()));
+
+                // 👇 新增：根据截图类型添加后缀
+                string suffix = "";
+                if (isAutoCapture)
+                {
+                    suffix = settings?.Settings?.AutoScreenshotSuffix ?? "";
+                }
+                else
+                {
+                    suffix = settings?.Settings?.ManualScreenshotSuffix ?? "";
+                }
+
+                // 如果后缀不为空，直接添加到 result 后面（不加额外下划线）
+                if (!string.IsNullOrEmpty(suffix))
+                {
+                    // 直接追加用户输入的内容，不做任何修改
+                    result = result + suffix;
+                }
 
                 var filename = Path.Combine(outFolder, result + ".png");
 
                 bmp.Save(filename, System.Drawing.Imaging.ImageFormat.Png);
                 bmp.Dispose();
+                savedPath = filename;
                 logger.Info($"Saved screenshot: {filename}");
 
-                // 👇 新增：截图保存后刷新 ScreenshotsVisualizer
+                // 刷新 ScreenshotsVisualizer
                 if (plugin != null && !string.IsNullOrEmpty(gameTitle))
                 {
                     plugin.NotifyScreenshotsVisualizerRefresh(gameTitle);
                 }
+
+                return savedPath;
             }
             catch (Exception e)
             {
                 logger.Error(e, "Error taking screenshot");
+
+                // 截图失败时发送错误通知
+                if (messagesHandler != null)
+                {
+                    try
+                    {
+                        messagesHandler.ShowErrorNotification(gameTitle ?? "Unknown", e.Message);
+                    }
+                    catch { }
+                }
+
+                return null;
             }
         }
     }

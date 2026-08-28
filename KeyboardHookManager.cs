@@ -13,6 +13,9 @@ namespace SharpMemories
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
 
+        // 👇 新增：防抖动间隔（毫秒）
+        private const int DEBOUNCE_INTERVAL_MS = 500;
+
         private LowLevelKeyboardProc _proc;
         private IntPtr _hookID = IntPtr.Zero;
         private Action _hotkeyCallback;
@@ -23,6 +26,10 @@ namespace SharpMemories
         private bool _requireShift;
         private bool _isEnabled;
         private bool _suppressKey;
+
+        // 👇 新增：防抖动相关字段
+        private DateTime _lastTriggerTime = DateTime.MinValue;
+        private bool _isProcessing = false;
 
         public KeyboardHookManager()
         {
@@ -40,6 +47,10 @@ namespace SharpMemories
             _suppressKey = suppressKey;
             _hotkeyCallback = callback;
             _isEnabled = true;
+
+            // 👇 新增：重置防抖动状态
+            _lastTriggerTime = DateTime.MinValue;
+            _isProcessing = false;
 
             if (_hookID == IntPtr.Zero)
             {
@@ -78,10 +89,8 @@ namespace SharpMemories
                 int vkCode = Marshal.ReadInt32(lParam);
                 Key key = KeyInterop.KeyFromVirtualKey(vkCode);
 
-                // Check if this is our target key
                 if (key == _targetKey)
                 {
-                    // Check modifiers
                     bool ctrlPressed = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
                     bool altPressed = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
                     bool shiftPressed = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
@@ -93,17 +102,49 @@ namespace SharpMemories
 
                     if (modifiersMatch)
                     {
-                        logger.Debug("Hotkey pressed, triggering callback");
-                        try
+                        // 👇 新增：防抖动检查
+                        bool canTrigger = false;
+                        lock (this)
                         {
-                            _hotkeyCallback?.Invoke();
-                        }
-                        catch (Exception e)
-                        {
-                            logger.Error(e, "Error in hotkey callback");
+                            var now = DateTime.Now;
+                            var elapsed = (now - _lastTriggerTime).TotalMilliseconds;
+
+                            if (!_isProcessing && elapsed >= DEBOUNCE_INTERVAL_MS)
+                            {
+                                _isProcessing = true;
+                                _lastTriggerTime = now;
+                                canTrigger = true;
+                            }
+                            else
+                            {
+                                if (elapsed < DEBOUNCE_INTERVAL_MS)
+                                {
+                                    logger.Debug($"Hotkey debounced: {elapsed:F0}ms since last trigger (min: {DEBOUNCE_INTERVAL_MS}ms)");
+                                }
+                            }
                         }
 
-                        // If suppress is enabled, return non-zero to prevent the key from reaching the application
+                        if (canTrigger)
+                        {
+                            logger.Debug("Hotkey pressed, triggering callback");
+                            try
+                            {
+                                _hotkeyCallback?.Invoke();
+                            }
+                            catch (Exception e)
+                            {
+                                logger.Error(e, "Error in hotkey callback");
+                            }
+                            finally
+                            {
+                                // 👇 新增：处理完成后释放锁
+                                lock (this)
+                                {
+                                    _isProcessing = false;
+                                }
+                            }
+                        }
+
                         if (_suppressKey)
                         {
                             logger.Debug("Suppressing key event");
