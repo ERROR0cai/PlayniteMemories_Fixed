@@ -3,44 +3,58 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- SharpMemories Settings View -->
+    <!-- ============ 1. Basic Settings ============ -->
     <sys:String x:Key="LOCSharpMemories_Settings_EnableAutoScreenshots">Enable automatic screenshots</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_IntervalLabel">Interval (minutes):</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_IntervalUnit">minutes</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_IntervalTestModeHint">🔬 Test Mode (10s interval)</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_OutputFolderLabel">Output folder:</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_BrowseButton">Browse...</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_MonitorExternalFolder">Monitor external screenshot folder (to copy Steam screenshots to the Playnite screenshots folder)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_RenamePattern">Rename pattern:</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePattern">Available variables: {{game}} {{date}} {{time}} {{datetime}} {{original}}</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePatternLabel">💡 {{game}} game name, {{date}} date, {{time}} time, {{datetime}} date time, {{original}} original name</sys:String>
+
+    <!-- ============ 2. Screenshot Suffix Settings ============ -->
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixTitle">Screenshot Suffix Settings (appended to filename)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AutoSuffix">Auto screenshot suffix:</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_ManualSuffix">Manual screenshot suffix:</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixPlaceholder">e.g.: _auto</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixEmptyHint">(leave empty to not add)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuffixHint">💡 Suffix will be added at the end of filename, before extension</sys:String>
+
+    <!-- ============ 3. ScreenshotsVisualizer Refresh ============ -->
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableSVRefresh">Refresh ScreenshotsVisualizer after capture</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_EnableSVRefresh">Auto-refresh ScreenshotsVisualizer plugin after each screenshot (requires installed plugin)</sys:String>
+
+    <!-- ============ 4. Monitor External Folder ============ -->
+    <sys:String x:Key="LOCSharpMemories_Settings_MonitorExternalFolder">Monitor external screenshot folder</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_MonitorFolderLabel">Monitor folder:</sys:String>
 
-    <!-- 👇 新增 -->
-    <sys:String x:Key="LOCSharpMemories_Settings_RenamePattern">Rename Pattern</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePattern">Available variables: {{game}} {{date}} {{time}} {{datetime}}</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_Tip_RenamePatternLabel">Available variables: {{game}} game name, {{date}} date, {{time}} time, {{datetime}} date time, {{original}} original name</sys:String>
+    <!-- ============ 5. Screenshot Condition Settings ============ -->
+    <sys:String x:Key="LOCSharpMemories_Settings_ConditionTitle">Screenshot Condition Settings</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AllowBackgroundScreenshot">Allow auto screenshot when game is in background (disabled by default)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_AllowBackgroundScreenshot">When enabled, auto screenshot works even if game is not in foreground. When disabled, auto screenshot only works when game is in foreground</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_SystemPause">💡 Auto screenshot is always paused when system is locked or screen is off</sys:String>
 
-    <sys:String x:Key="LOCSharpMemories_Settings_HotkeyTitle">Screenshot Hotkey</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_EnableHotkey">Enable screenshot hotkey</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_CurrentHotkeyLabel">Current Hotkey:</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_SuppressHotkey">Suppress hotkey from reaching the application (prevents F12 from opening browser dev tools, etc.)</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_HotkeyLibrariesLabel">Enable hotkey for these libraries:</sys:String>
-
-    <sys:String x:Key="LOCSharpMemories_Settings_EnableSVRefresh">Refresh ScreenshotsVisualizer after capture (default: refresh after closing the game; when enabled, refreshes after every screenshot)</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_Tip_EnableSVRefresh">Automatically refresh ScreenshotsVisualizer plugin after each screenshot (requires installed plugin)</sys:String>
-
-    <!-- ========== New: Notification Settings ========== -->
+    <!-- ============ 6. Notification Settings ============ -->
     <sys:String x:Key="LOCSharpMemories_Settings_NotificationTitle">Notification Settings</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_EnableNotifications">Enable Screenshot Notifications</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_NotificationStyle">Notification Style</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AutoNotification">Auto Screenshot Notification</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_ManualNotification">Manual Screenshot Notification</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_NotificationStyle">Notification style:</sys:String>
     <sys:String x:Key="LOCSharpMemories_Settings_NotificationHint">💡 Windows notifications require Windows 10/11</sys:String>
+
+    <!-- Notification message texts -->
     <sys:String x:Key="LOCSharpMemories_Notification_AutoCapture">Auto Capture</sys:String>
     <sys:String x:Key="LOCSharpMemories_Notification_ManualCapture">Manual Capture</sys:String>
     <sys:String x:Key="LOCSharpMemories_Notification_ScreenshotSaved">Screenshot Saved</sys:String>
     <sys:String x:Key="LOCSharpMemories_Notification_Error">Screenshot Failed</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_AutoNotification">Auto Screenshot Notification</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_ManualNotification">Manual Screenshot Notification</sys:String>
 
-    <sys:String x:Key="LOCSharpMemories_Settings_SuffixTitle">Screenshot Suffix Settings</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_AutoSuffix">Auto Screenshot Suffix</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_ManualSuffix">Manual Screenshot Suffix</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_SuffixHint">💡 Suffix will be added at the end of filename, before extension</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_SuffixPlaceholder">e.g.: _auto</sys:String>
-    <sys:String x:Key="LOCSharpMemories_Settings_SuffixEmptyHint">(leave empty to not add)</sys:String>
+    <!-- ============ 7. Hotkey Settings ============ -->
+    <sys:String x:Key="LOCSharpMemories_Settings_HotkeyTitle">Screenshot Hotkey</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_EnableHotkey">Enable screenshot hotkey</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_CurrentHotkeyLabel">Current hotkey:</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_SuppressHotkey">Suppress hotkey from reaching the application (prevents F12 from opening browser dev tools, etc.)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_HotkeyLibrariesLabel">Enable hotkey for these libraries:</sys:String>
+
 </ResourceDictionary>

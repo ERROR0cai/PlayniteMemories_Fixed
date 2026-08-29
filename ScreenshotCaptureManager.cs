@@ -112,16 +112,32 @@ namespace SharpMemories
             try
             {
                 var intervalMinutes = settings?.Settings?.IntervalMinutes ?? 30;
-                if (intervalMinutes <= 0) intervalMinutes = 30;
-                var interval = TimeSpan.FromMinutes(intervalMinutes);
+                TimeSpan interval;
 
-                logger.Info($"Capture loop started for '{gameTitle}' with interval: {intervalMinutes} minutes");
+                // 👇 测试模式：当间隔为 0 时，每 10 秒截图一次
+                if (intervalMinutes <= 0)
+                {
+                    interval = TimeSpan.FromSeconds(10);
+                    logger.Info($"🔬 TEST MODE: Capture loop started for '{gameTitle}' with interval: 10 seconds");
+                }
+                else
+                {
+                    interval = TimeSpan.FromMinutes(intervalMinutes);
+                    logger.Info($"Capture loop started for '{gameTitle}' with interval: {intervalMinutes} minutes");
+                }
 
                 while (!token.IsCancellationRequested)
                 {
                     try
                     {
-                        logger.Debug($"Waiting {intervalMinutes} minutes before next capture");
+                        if (intervalMinutes <= 0)
+                        {
+                            logger.Debug($"🔬 Test mode: Waiting 10 seconds before next capture");
+                        }
+                        else
+                        {
+                            logger.Debug($"Waiting {intervalMinutes} minutes before next capture");
+                        }
                         await Task.Delay(interval, token);
                     }
                     catch (TaskCanceledException)
@@ -134,9 +150,13 @@ namespace SharpMemories
 
                     await Task.Run(() =>
                     {
+                        if (!CanPerformAutoScreenshot(processId, gameTitle))
+                        {
+                            logger.Debug($"Screenshot skipped for '{gameTitle}' - conditions not met");
+                            return;
+                        }
                         string savedPath = CaptureOnce(processId, gameTitle, true);
 
-                        // 自动截图完成通知
                         if (!string.IsNullOrEmpty(savedPath) && messagesHandler != null)
                         {
                             try
@@ -157,6 +177,75 @@ namespace SharpMemories
             {
                 logger.Error(e, "Error in CaptureLoop");
             }
+        }
+
+        // 👇 检查是否允许自动截图
+        private bool CanPerformAutoScreenshot(int processId, string gameTitle)
+        {
+            logger.Debug($"🔍 CanPerformAutoScreenshot() for '{gameTitle}' (PID: {processId})");
+
+            // 1. 检查系统是否锁屏或息屏
+            bool canTake = ScreenCapture.CanTakeScreenshot();
+            logger.Debug($"   ├─ ScreenCapture.CanTakeScreenshot(): {canTake}");
+
+            if (!canTake)
+            {
+                logger.Debug($"   └─ ⛔ System is locked or sleeping, skipping screenshot for '{gameTitle}'");
+                return false;
+            }
+
+            // 2. 检查后台截图是否允许
+            bool allowBackground = settings?.Settings?.AllowBackgroundScreenshot ?? false;
+            logger.Debug($"   ├─ AllowBackgroundScreenshot: {allowBackground}");
+
+            if (!allowBackground)
+            {
+                // 如果不允许后台截图，检查游戏窗口是否在前台
+                try
+                {
+                    if (processId > 0)
+                    {
+                        var proc = System.Diagnostics.Process.GetProcessById(processId);
+                        if (proc != null && proc.MainWindowHandle != IntPtr.Zero)
+                        {
+                            bool isForeground = ScreenCapture.IsWindowForeground(proc.MainWindowHandle);
+                            logger.Debug($"   ├─ Game window foreground: {isForeground}");
+
+                            if (!isForeground)
+                            {
+                                logger.Debug($"   └─ ⛔ Game '{gameTitle}' is not in foreground and background screenshot is disabled");
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            logger.Debug($"   └─ ⛔ Process {processId} not found or has no window handle");
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        logger.Debug($"   ├─ No process ID available, cannot check foreground status");
+                        // 没有进程ID时，保守处理：如果是自动截图，返回 false
+                        // 但如果是手动截图，应该允许（因为用户主动触发）
+                        // 这里假设是自动截图调用，返回 false
+                        logger.Debug($"   └─ ⛔ No process ID, cannot verify foreground - skipping");
+                        return false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.Debug($"   └─ ⛔ Failed to check foreground status: {ex.Message}");
+                    return false;
+                }
+            }
+            else
+            {
+                logger.Debug($"   ├─ Background screenshot is allowed for '{gameTitle}'");
+            }
+
+            logger.Debug($"   └─ ✅ All conditions met, allowing screenshot");
+            return true;
         }
 
         // 修改：返回保存的文件路径

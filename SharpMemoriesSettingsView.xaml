@@ -3,118 +3,169 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:converters="clr-namespace:SharpMemories.Converters"
              mc:Ignorable="d"
-             d:DesignHeight="400" d:DesignWidth="600">
-    <StackPanel>
-        <!--<TextBlock Text="Description for Option1:"/>
-        <TextBox Text="{Binding Settings.Option1}"/>
-        <TextBlock Text="Description for Option2:"/>
-        <CheckBox IsChecked="{Binding Settings.Option2}"/>
-        <Separator Margin="6"/>-->
-        <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableAutoScreenshots}" IsChecked="{Binding Settings.Enabled}"/>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_IntervalLabel}" VerticalAlignment="Center" Margin="0,6,6,6"/>
-            <TextBox Width="60" Text="{Binding Settings.IntervalMinutes}" />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_OutputFolderLabel}" VerticalAlignment="Center" Margin="0,6,6,6"/>
-            <TextBox x:Name="OutputFolderText" Width="300" Text="{Binding Settings.OutputFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            <Button Content="{DynamicResource LOCSharpMemories_Settings_BrowseButton}" Margin="6,0,0,0" Click="BrowseOutputFolder_Click" />
-        </StackPanel>
-        <!-- Rename pattern input -->
-        <StackPanel Orientation="Vertical" Margin="0,6,0,6">
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_RenamePattern}" Margin="0,0,0,4"/>
-            <TextBox Text="{Binding Settings.RenamePattern, UpdateSourceTrigger=PropertyChanged}"
-                    Width="300"
-                    HorizontalAlignment="Left"
-                    ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_RenamePattern}"/>
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_Tip_RenamePatternLabel}"
-                    Foreground="Gray" FontSize="11"
-                    TextWrapping="Wrap" Margin="0,4,0,0"/>
-        </StackPanel>
+             d:DesignHeight="500" d:DesignWidth="700">
 
-        <!-- 👇 新增：截图后缀设置 -->
-        <StackPanel Orientation="Vertical" Margin="0,6,0,6">
-            <TextBlock Text="截图后缀设置（将添加到文件名末尾）" FontWeight="Bold" Margin="0,0,0,4"/>
-            <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
-                <TextBlock Text="自动截图后缀:" VerticalAlignment="Center" Width="110"/>
-                <TextBox Text="{Binding Settings.AutoScreenshotSuffix, UpdateSourceTrigger=PropertyChanged}"
-                        Width="150"
-                        HorizontalAlignment="Left"
-                        ToolTip="例如: _auto"/>
-                <TextBlock Text="（留空则不添加）" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+    <UserControl.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="20">
+            <!-- ============ 1. 基本设置 ============ -->
+            <!-- 启用自动截图 -->
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableAutoScreenshots}"
+                      IsChecked="{Binding Settings.Enabled}"/>
+
+            <!-- 截图间隔 -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_IntervalLabel}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox Width="60" Text="{Binding Settings.IntervalMinutes}" />
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_IntervalUnit}"
+                           VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray" FontSize="11"/>
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_IntervalTestModeHint}"
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Orange" FontSize="11"
+                           Visibility="{Binding IsTestMode, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
-                <TextBlock Text="手动截图后缀:" VerticalAlignment="Center" Width="110"/>
-                <TextBox Text="{Binding Settings.ManualScreenshotSuffix, UpdateSourceTrigger=PropertyChanged}"
-                        Width="150"
-                        HorizontalAlignment="Left"
-                        ToolTip="例如: _manual"/>
-                <TextBlock Text="（留空则不添加）" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+
+            <!-- 输出文件夹 -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_OutputFolderLabel}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox x:Name="OutputFolderText" Width="300"
+                         Text="{Binding Settings.OutputFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Content="{DynamicResource LOCSharpMemories_Settings_BrowseButton}"
+                        Margin="6,0,0,0" Click="BrowseOutputFolder_Click" />
             </StackPanel>
-            <TextBlock Text="💡 后缀会自动添加在文件名末尾、扩展名之前"
-                    Foreground="Gray" FontSize="11"
-                    Margin="0,4,0,0"/>
+
+            <!-- 重命名模式 -->
+            <StackPanel Orientation="Vertical" Margin="0,6,0,6">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_RenamePattern}" Margin="0,0,0,4"/>
+                <TextBox Text="{Binding Settings.RenamePattern, UpdateSourceTrigger=PropertyChanged}"
+                         Width="300"
+                         HorizontalAlignment="Left"
+                         ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_RenamePattern}"/>
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_Tip_RenamePatternLabel}"
+                           Foreground="Gray" FontSize="11"
+                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <!-- ============ 2. 截图后缀设置 ============ -->
+            <StackPanel Orientation="Vertical" Margin="0,6,0,6">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_SuffixTitle}" FontWeight="Bold" Margin="0,0,0,4"/>
+                <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_AutoSuffix}" VerticalAlignment="Center" Width="110"/>
+                    <TextBox Text="{Binding Settings.AutoScreenshotSuffix, UpdateSourceTrigger=PropertyChanged}"
+                             Width="150"
+                             HorizontalAlignment="Left"
+                             ToolTip="{DynamicResource LOCSharpMemories_Settings_SuffixPlaceholder}"/>
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_SuffixEmptyHint}" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_ManualSuffix}" VerticalAlignment="Center" Width="110"/>
+                    <TextBox Text="{Binding Settings.ManualScreenshotSuffix, UpdateSourceTrigger=PropertyChanged}"
+                             Width="150"
+                             HorizontalAlignment="Left"
+                             ToolTip="{DynamicResource LOCSharpMemories_Settings_SuffixPlaceholder}"/>
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_SuffixEmptyHint}" Foreground="Gray" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </StackPanel>
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_SuffixHint}"
+                           Foreground="Gray" FontSize="11"
+                           Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <!-- ============ 3. ScreenshotsVisualizer 刷新 ============ -->
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableSVRefresh}"
+                      IsChecked="{Binding Settings.EnableSVRefresh}"
+                      Margin="0,6,0,6"
+                      ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_EnableSVRefresh}"/>
+
+            <!-- ============ 4. 监控外部文件夹 ============ -->
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_MonitorExternalFolder}"
+                      IsChecked="{Binding Settings.EnableMonitoring}" Margin="0,6,0,0"/>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                        IsEnabled="{Binding Settings.EnableMonitoring}" Margin="0,6,0,6">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_MonitorFolderLabel}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox x:Name="MonitorFolderText" Width="300"
+                         Text="{Binding Settings.MonitorFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button Content="{DynamicResource LOCSharpMemories_Settings_BrowseButton}"
+                        Margin="6,0,0,0" Click="BrowseMonitorFolder_Click" />
+            </StackPanel>
+
+            <!-- ============ 5. 截图条件设置 ============ -->
+            <Separator Margin="0,12,0,12"/>
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_ConditionTitle}" FontWeight="Bold" Margin="0,0,0,6"/>
+
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_AllowBackgroundScreenshot}"
+                      IsChecked="{Binding Settings.AllowBackgroundScreenshot}"
+                      Margin="0,0,0,6"
+                      ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_AllowBackgroundScreenshot}"/>
+
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_Tip_SystemPause}"
+                       Foreground="Gray" FontSize="11"
+                       Margin="0,2,0,6"/>
+
+            <!-- ============ 6. 通知设置 ============ -->
+            <Separator Margin="0,12,0,12"/>
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_NotificationTitle}" FontWeight="Bold" Margin="0,0,0,6"/>
+
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableNotifications}"
+                      IsChecked="{Binding Settings.EnableNotifications}" Margin="0,0,0,6"/>
+
+            <StackPanel Margin="20,0,0,6" IsEnabled="{Binding Settings.EnableNotifications}">
+                <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_AutoNotification}"
+                          IsChecked="{Binding Settings.EnableAutoScreenshotNotification}" Margin="0,2"/>
+                <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_ManualNotification}"
+                          IsChecked="{Binding Settings.EnableManualScreenshotNotification}" Margin="0,2"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6"
+                        IsEnabled="{Binding Settings.EnableNotifications}">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_NotificationStyle}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox
+                    ItemsSource="{Binding Settings.NotificationStyleOptions}"
+                    DisplayMemberPath="DisplayName"
+                    SelectedValuePath="Value"
+                    SelectedValue="{Binding Settings.NotificationStyle}"
+                    Width="150"
+                    VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_NotificationHint}"
+                       Foreground="Gray" FontSize="11"
+                       Margin="0,2,0,6"/>
+
+            <!-- ============ 7. 热键设置 ============ -->
+            <Separator Margin="0,12,0,12"/>
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_HotkeyTitle}" FontWeight="Bold" Margin="0,0,0,6"/>
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableHotkey}"
+                      IsChecked="{Binding Settings.EnableHotkey}" Margin="0,0,0,6"/>
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6">
+                <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_CurrentHotkeyLabel}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="{Binding HotkeyDisplayString}"
+                           VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,12,0" MinWidth="120"/>
+                <Button Content="{Binding RecordButtonText}" Click="RecordHotkey_Click" Padding="10,4" MinWidth="150"/>
+            </StackPanel>
+
+            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_SuppressHotkey}"
+                      IsChecked="{Binding Settings.HotkeySuppressKey}" Margin="0,0,0,6"/>
+
+            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_HotkeyLibrariesLabel}" Margin="0,12,0,6"/>
+            <ItemsControl ItemsSource="{Binding LibraryPlugins}" Margin="20,0,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsHotkeyEnabled}" Margin="0,2"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- 底部留白 -->
+            <TextBlock Height="20"/>
         </StackPanel>
-        <!-- 👇 新增：ScreenshotsVisualizer 刷新选项 -->
-        <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableSVRefresh}"
-                IsChecked="{Binding Settings.EnableSVRefresh}"
-                Margin="0,6,0,6"
-                ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_EnableSVRefresh}"/>
-        <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_MonitorExternalFolder}" IsChecked="{Binding Settings.EnableMonitoring}" Margin="0,6,0,0"/>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" IsEnabled="{Binding Settings.EnableMonitoring}">
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_MonitorFolderLabel}" VerticalAlignment="Center" Margin="0,6,6,6"/>
-            <TextBox x:Name="MonitorFolderText" Width="300" Text="{Binding Settings.MonitorFolder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            <Button Content="{DynamicResource LOCSharpMemories_Settings_BrowseButton}" Margin="6,0,0,0" Click="BrowseMonitorFolder_Click" />
-        </StackPanel>
-
-        <!-- 👇 新增：通知设置区域 -->
-        <Separator Margin="0,12,0,12"/>
-
-        <TextBlock Text="通知设置" FontWeight="Bold" Margin="0,0,0,6"/>
-
-        <CheckBox Content="启用通知" IsChecked="{Binding Settings.EnableNotifications}" Margin="0,0,0,6"/>
-
-        <StackPanel Margin="20,0,0,6" IsEnabled="{Binding Settings.EnableNotifications}">
-            <CheckBox Content="自动截图通知" IsChecked="{Binding Settings.EnableAutoScreenshotNotification}" Margin="0,2"/>
-            <CheckBox Content="手动截图通知" IsChecked="{Binding Settings.EnableManualScreenshotNotification}" Margin="0,2"/>
-        </StackPanel>
-
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6"
-                    IsEnabled="{Binding Settings.EnableNotifications}">
-            <TextBlock Text="通知样式:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <ComboBox
-                ItemsSource="{Binding Settings.NotificationStyleOptions}"
-                DisplayMemberPath="DisplayName"
-                SelectedValuePath="Value"
-                SelectedValue="{Binding Settings.NotificationStyle}"
-                Width="150"
-                VerticalAlignment="Center"/>
-        </StackPanel>
-
-        <TextBlock Text="💡 Windows 通知需要 Windows 10/11 系统支持"
-                   Foreground="Gray" FontSize="11"
-                   Margin="0,2,0,6"/>
-
-        <!-- Hotkey Settings -->
-        <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_HotkeyTitle}" FontWeight="Bold" Margin="0,0,0,6"/>
-        <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableHotkey}" IsChecked="{Binding Settings.EnableHotkey}" Margin="0,0,0,6"/>
-
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6">
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_CurrentHotkeyLabel}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBlock Text="{Binding HotkeyDisplayString}" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,12,0" MinWidth="120"/>
-            <Button Content="{Binding RecordButtonText}" Click="RecordHotkey_Click" Padding="10,4" MinWidth="150"/>
-        </StackPanel>
-
-        <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_SuppressHotkey}" IsChecked="{Binding Settings.HotkeySuppressKey}" Margin="0,0,0,6"/>
-
-        <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_HotkeyLibrariesLabel}" Margin="0,12,0,6"/>
-        <ItemsControl ItemsSource="{Binding LibraryPlugins}" Margin="20,0,0,0">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsHotkeyEnabled}" Margin="0,2"/>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-    </StackPanel>
+    </ScrollViewer>
 </UserControl>

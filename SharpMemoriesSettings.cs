@@ -1,4 +1,4 @@
-﻿using Playnite.SDK;
+﻿﻿using Playnite.SDK;
 using Playnite.SDK.Data;
 using Playnite.SDK.Plugins;
 using System;
@@ -25,12 +25,12 @@ namespace SharpMemories
     public class SharpMemoriesSettings : ObservableObject
     {
         private bool enabled = true;
-        private int intervalMinutes = 15;
+        private int intervalMinutes = 10;
         private string outputFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Playnite");
         private string monitorFolder = string.Empty;
         private bool enableMonitoring = true;
 
-        //  新增：重命名模式
+        // 重命名模式
         private string _renamePattern = "{game}_{date}_{time}_Gamesnap";
         public string RenamePattern
         {
@@ -38,7 +38,7 @@ namespace SharpMemories
             set => SetValue(ref _renamePattern, value);
         }
 
-        // 👇 新增：是否启用 ScreenshotsVisualizer 刷新
+        // 是否启用 ScreenshotsVisualizer 刷新
         private bool _enableSVRefresh = false;
         public bool EnableSVRefresh
         {
@@ -52,13 +52,23 @@ namespace SharpMemories
         private bool hotkeyCtrl = false;
         private bool hotkeyAlt = false;
         private bool hotkeyShift = false;
-        private bool hotkeySuppressKey = true; // Prevent the key from being passed to the application
+        private bool hotkeySuppressKey = true;
 
         // Per-library hotkey enable flags - dynamic dictionary keyed by library plugin ID
         private Dictionary<Guid, bool> hotkeyEnabledByLibrary = new Dictionary<Guid, bool>();
 
         public bool Enabled { get => enabled; set => SetValue(ref enabled, value); }
-        public int IntervalMinutes { get => intervalMinutes; set => SetValue(ref intervalMinutes, value); }
+
+        public int IntervalMinutes
+        {
+            get => intervalMinutes;
+            set
+            {
+                if (value < 0) value = 0;
+                SetValue(ref intervalMinutes, value);
+            }
+        }
+
         public string OutputFolder { get => outputFolder; set => SetValue(ref outputFolder, value); }
         public string MonitorFolder { get => monitorFolder; set => SetValue(ref monitorFolder, value); }
         public bool EnableMonitoring { get => enableMonitoring; set => SetValue(ref enableMonitoring, value); }
@@ -81,14 +91,10 @@ namespace SharpMemories
         // Helper method to check if hotkey is enabled for a specific library
         public bool IsHotkeyEnabledForLibrary(Guid libraryId)
         {
-            // If we have an explicit setting for this library, use it
             if (hotkeyEnabledByLibrary.TryGetValue(libraryId, out bool enabled))
             {
                 return enabled;
             }
-
-            // Steam library ID (CB91DFC9-B977-43BF-8E70-55F46E410FAB) - disable hotkey by default
-            // Other libraries default to enabled
             return libraryId != Guid.Parse("CB91DFC9-B977-43BF-8E70-55F46E410FAB");
         }
 
@@ -107,26 +113,38 @@ namespace SharpMemories
             if (hotkeyAlt) parts.Add("Alt");
             if (hotkeyShift) parts.Add("Shift");
             parts.Add(hotkeyKey.ToString());
-
             return string.Join(" + ", parts);
         }
 
-        // ========== 新增：截图后缀设置 ==========
+        // ========== 截图条件设置 ==========
 
-        private string _autoScreenshotSuffix = "";   // 自动截图后缀（默认为空）
-        private string _manualScreenshotSuffix = ""; // 手动截图后缀（默认为空）
+        private bool _allowBackgroundScreenshot = false;
 
         /// <summary>
-        /// 自动截图额外后缀（例如 "_Auto"），默认为空
+        /// 是否允许游戏在后台时自动截图（默认禁用）
+        /// </summary>
+        public bool AllowBackgroundScreenshot
+        {
+            get => _allowBackgroundScreenshot;
+            set => SetValue(ref _allowBackgroundScreenshot, value);
+        }
+
+        // ========== 截图后缀设置 ==========
+
+        private string _autoScreenshotSuffix = "";
+        private string _manualScreenshotSuffix = "";
+
+        /// <summary>
+        /// 自动截图额外后缀，默认为空
         /// </summary>
         public string AutoScreenshotSuffix
         {
             get => _autoScreenshotSuffix;
-            set => SetValue(ref _autoScreenshotSuffix, value ?? "");  // null 转换为空字符串
+            set => SetValue(ref _autoScreenshotSuffix, value ?? "");
         }
 
         /// <summary>
-        /// 手动截图额外后缀（例如 "_Manual"），默认为空
+        /// 手动截图额外后缀，默认为空
         /// </summary>
         public string ManualScreenshotSuffix
         {
@@ -134,11 +152,11 @@ namespace SharpMemories
             set => SetValue(ref _manualScreenshotSuffix, value ?? "");
         }
 
-        // ========== 新增：通知设置 ==========
+        // ========== 通知设置 ==========
 
         private bool _enableNotifications = true;
-        private bool _enableAutoScreenshotNotification = true;  // 👈 新增
-        private bool _enableManualScreenshotNotification = true; // 👈 新增
+        private bool _enableAutoScreenshotNotification = true;
+        private bool _enableManualScreenshotNotification = true;
         private NotificationStyles _notificationStyle = NotificationStyles.Toast;
 
         public bool EnableNotifications
@@ -147,14 +165,12 @@ namespace SharpMemories
             set => SetValue(ref _enableNotifications, value);
         }
 
-        // 👇 新增：自动截图通知开关
         public bool EnableAutoScreenshotNotification
         {
             get => _enableAutoScreenshotNotification;
             set => SetValue(ref _enableAutoScreenshotNotification, value);
         }
 
-        // 👇 新增：手动截图通知开关
         public bool EnableManualScreenshotNotification
         {
             get => _enableManualScreenshotNotification;
@@ -167,7 +183,6 @@ namespace SharpMemories
             set => SetValue(ref _notificationStyle, value);
         }
 
-        // 👇 添加 [DontSerialize] 属性，防止被保存到 JSON
         [DontSerialize]
         public System.Collections.Generic.List<NotificationStyleItem> NotificationStyleOptions { get; } = new System.Collections.Generic.List<NotificationStyleItem>
         {
@@ -197,6 +212,7 @@ namespace SharpMemories
                 settings = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HotkeyDisplayString));
+                OnPropertyChanged(nameof(IsTestMode));
             }
         }
 
@@ -227,15 +243,17 @@ namespace SharpMemories
 
         public string HotkeyDisplayString => Settings?.GetHotkeyDisplayString() ?? "None";
 
+        /// <summary>
+        /// 是否为测试模式（间隔为 0 时进入测试模式）
+        /// </summary>
+        public bool IsTestMode => Settings?.IntervalMinutes == 0;
+
         public SharpMemoriesSettingsViewModel(SharpMemories plugin)
         {
-            // Injecting your plugin instance is required for Save/Load method because Playnite saves data to a location based on what plugin requested the operation.
             this.plugin = plugin;
 
-            // Load saved settings.
             var savedSettings = plugin.LoadPluginSettings<SharpMemoriesSettings>();
 
-            // LoadPluginSettings returns null if no saved data is available.
             if (savedSettings != null)
             {
                 Settings = savedSettings;
@@ -243,18 +261,24 @@ namespace SharpMemories
             else
             {
                 Settings = new SharpMemoriesSettings();
-                // Set default monitor folder to Steam screenshot folder if available
                 var steamFolder = SteamHelpers.GetSteamScreenshotFolder();
                 Settings.MonitorFolder = steamFolder ?? string.Empty;
             }
+
+            // 👇 订阅 PropertyChanged 事件，当 IntervalMinutes 变化时更新 IsTestMode
+            Settings.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(Settings.IntervalMinutes))
+                {
+                    OnPropertyChanged(nameof(IsTestMode));
+                }
+            };
         }
 
         public void BeginEdit()
         {
-            // Code executed when settings view is opened and user starts editing values.
             editingClone = Serialization.GetClone(Settings);
 
-            // Populate library plugins list from Playnite API
             try
             {
                 var plugins = plugin.PlayniteApi.Addons.Plugins.OfType<LibraryPlugin>().ToList();
@@ -270,7 +294,6 @@ namespace SharpMemories
             }
             catch (Exception ex)
             {
-                // Log error and provide empty list as fallback
                 LogManager.GetLogger().Error(ex, "Failed to enumerate library plugins");
                 LibraryPlugins = new List<LibraryPluginInfo>();
             }
@@ -278,15 +301,11 @@ namespace SharpMemories
 
         public void CancelEdit()
         {
-            // Code executed when user decides to cancel any changes made since BeginEdit was called.
-            // This method should revert any changes made to Option1 and Option2.
             Settings = editingClone;
         }
 
         public void EndEdit()
         {
-            // Code executed when user decides to confirm changes made since BeginEdit was called.
-            // Save the library plugin settings back to the dictionary
             if (LibraryPlugins != null)
             {
                 foreach (var libraryPlugin in LibraryPlugins)
@@ -294,20 +313,15 @@ namespace SharpMemories
                     Settings.SetHotkeyEnabledForLibrary(libraryPlugin.Id, libraryPlugin.IsHotkeyEnabled);
                 }
             }
-
             plugin.SavePluginSettings(Settings);
         }
 
         public bool VerifySettings(out List<string> errors)
         {
-            // Code execute when user decides to confirm changes made since BeginEdit was called.
-            // Executed before EndEdit is called and EndEdit is not called if false is returned.
-            // List of errors is presented to user if verification fails.
             errors = new List<string>();
             return true;
         }
 
-        // Update hotkey settings and refresh the display
         public void UpdateHotkey(Key key, bool ctrl, bool alt, bool shift)
         {
             Settings.HotkeyKey = key;

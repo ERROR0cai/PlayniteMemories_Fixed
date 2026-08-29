@@ -49,6 +49,7 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Converters\BooleanToVisibilityConverter.cs" />
     <Compile Include="FileHelpers.cs" />
     <Compile Include="FolderMonitorManager.cs" />
     <Compile Include="KeyboardHookManager.cs" />
