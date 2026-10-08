@@ -1,8 +1,10 @@
-using Microsoft.Toolkit.Uwp.Notifications;
+﻿using Microsoft.Toolkit.Uwp.Notifications;
 using Playnite.SDK;
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;  // 👈 新增
 
 namespace SharpMemories
@@ -11,52 +13,206 @@ namespace SharpMemories
     {
         private static readonly ILogger logger = LogManager.GetLogger();
         private readonly IPlayniteAPI playniteApi;
-        private readonly SharpMemoriesSettings settings;
+        // 保留初始化时的设置对象，仅用于调试对比。
+        private readonly SharpMemoriesSettings capturedSettings;
 
-        public MessagesHandler(IPlayniteAPI playniteApi, SharpMemoriesSettings settings)
+        // 始终获取当前正在使用的设置对象。
+        private readonly Func<SharpMemoriesSettings> currentSettingsProvider;
+
+        // 通知判断统一读取最新的设置对象。
+        private SharpMemoriesSettings settings
+        {
+            get
+            {
+                return currentSettingsProvider();
+            }
+        }
+
+        public MessagesHandler(
+            IPlayniteAPI playniteApi,
+            SharpMemoriesSettings settings,
+            Func<SharpMemoriesSettings> currentSettingsProvider)
         {
             this.playniteApi = playniteApi;
-            this.settings = settings;
+
+            // 旧设置仅用于诊断。
+            this.capturedSettings = settings;
+
+            // 正式通知逻辑通过此委托读取最新设置。
+            this.currentSettingsProvider =
+                currentSettingsProvider
+                ?? throw new ArgumentNullException(
+                    nameof(currentSettingsProvider));
+        }
+
+
+        /// <summary>
+        /// 通知诊断入口。
+        /// 只记录信息，不改变通知判断和发送行为。
+        /// </summary>
+        public void TraceNotification(
+            string stage,
+            bool? isAutoCapture = null)
+        {
+            try
+            {
+                SharpMemoriesSettings current =
+                    currentSettingsProvider?.Invoke();
+
+                // 调试开关以当前 ViewModel 为准。
+                if (current?.EnableNotificationDebug != true)
+                    return;
+
+                var captured = capturedSettings;
+
+                int capturedId = captured == null
+                    ? 0
+                    : RuntimeHelpers.GetHashCode(captured);
+
+                int currentId = current == null
+                    ? 0
+                    : RuntimeHelpers.GetHashCode(current);
+
+                logger.Info(
+                    $"[NOTIFY-DEBUG] Stage={stage} | " +
+                    $"Time={DateTime.Now:HH:mm:ss.fff} | " +
+                    $"Thread={Thread.CurrentThread.ManagedThreadId} | " +
+                    $"Type={(isAutoCapture.HasValue ? (isAutoCapture.Value ? "AUTO" : "MANUAL") : "OTHER")}");
+
+                logger.Info(
+                    $"[NOTIFY-DEBUG] " +
+                    $"CapturedSettingsId={capturedId} | " +
+                    $"CurrentSettingsId={currentId} | " +
+                    $"SameReference={object.ReferenceEquals(captured, current)}");
+
+                logger.Info(
+                    $"[NOTIFY-DEBUG] Captured | " +
+                    $"Global={captured?.EnableNotifications} | " +
+                    $"Auto={captured?.EnableAutoScreenshotNotification} | " +
+                    $"Manual={captured?.EnableManualScreenshotNotification} | " +
+                    $"Style={captured?.NotificationStyle}");
+
+                logger.Info(
+                    $"[NOTIFY-DEBUG] Current  | " +
+                    $"Global={current?.EnableNotifications} | " +
+                    $"Auto={current?.EnableAutoScreenshotNotification} | " +
+                    $"Manual={current?.EnableManualScreenshotNotification} | " +
+                    $"Style={current?.NotificationStyle}");
+            }
+            catch (Exception ex)
+            {
+                logger.Warn(ex, "[NOTIFY-DEBUG] Diagnostic logging failed");
+            }
+        }
+
+        /// <summary>
+        /// 记录通知流程中的分支选择。
+        /// </summary>
+        private void TraceBranch(string message)
+        {
+            try
+            {
+                if (currentSettingsProvider?.Invoke()?.EnableNotificationDebug == true)
+                {
+                    logger.Info("[NOTIFY-DEBUG] " + message);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn(ex, "[NOTIFY-DEBUG] Branch logging failed");
+            }
         }
 
         /// <summary>
         /// 显示截图成功通知
         /// </summary>
-        public void ShowScreenshotNotification(string gameName, string screenshotPath, bool isAutoCapture = true)
+        public void ShowScreenshotNotification(
+            string gameName,
+            string screenshotPath,
+            bool isAutoCapture = true,
+            string processName = null)
         {
+            TraceNotification("Notification.Entry", isAutoCapture);
+
             try
             {
-                // 👇 添加详细日志
-                logger.Info($"🔔 ShowScreenshotNotification called:");
-                logger.Info($"   ├─ gameName: '{gameName}'");
-                logger.Info($"   ├─ isAutoCapture: {isAutoCapture}");
-                logger.Info($"   ├─ screenshotPath: '{screenshotPath}'");
-                logger.Info($"   ├─ EnableNotifications: {settings.EnableNotifications}");
-                logger.Info($"   ├─ EnableAutoScreenshotNotification: {settings.EnableAutoScreenshotNotification}");
-                logger.Info($"   └─ EnableManualScreenshotNotification: {settings.EnableManualScreenshotNotification}");
                 if (!settings.EnableNotifications)
-                    return;
-
-                // 👇 新增：根据截图类型判断是否启用通知
-                if (isAutoCapture && !settings.EnableAutoScreenshotNotification)
-                    return;
-
-                if (!isAutoCapture && !settings.EnableManualScreenshotNotification)
-                    return;
-
-                if (settings.NotificationStyle == NotificationStyles.Toast && IsWindows10Or11())
                 {
-                    // 👇 使用 Task.Run 在后台线程显示 Toast 通知
-                    Task.Run(() => ShowToastNotification(gameName, screenshotPath, isAutoCapture));
+                    TraceBranch(
+                        "Notification.Blocked: Global notification disabled");
+                    return;
+                }
+
+                if (isAutoCapture &&
+                    !settings.EnableAutoScreenshotNotification)
+                {
+                    TraceBranch(
+                        "Notification.Blocked: Auto notification disabled");
+                    return;
+                }
+
+                if (!isAutoCapture &&
+                    !settings.EnableManualScreenshotNotification)
+                {
+                    TraceBranch(
+                        "Notification.Blocked: Manual notification disabled");
+                    return;
+                }
+
+                // 只过滤截图成功通知，不影响截图文件保存。
+                var current = settings;
+                if (current == null ||
+                    current.IsScreenshotNotificationProcessBlocked(processName, isAutoCapture))
+                {
+                    TraceBranch(
+                        $"Notification.Blocked: ProcessMode=" +
+                        $"{(isAutoCapture ? current?.AutoNotificationProcessMode : current?.ManualNotificationProcessMode)} " +
+                        $"Process={processName ?? "(unknown)"} " +
+                        $"Type={(isAutoCapture ? "AUTO" : "MANUAL")}");
+                    return;
+                }
+
+                TraceBranch(
+                    $"Notification.Allowed | Game={gameName} | " +
+                    $"Type={(isAutoCapture ? "AUTO" : "MANUAL")}");
+
+                if (settings.NotificationStyle == NotificationStyles.Toast &&
+                    IsWindows10Or11())
+                {
+                    TraceBranch("Notification.Dispatch: Windows Toast");
+
+                    Task.Run(() =>
+                    {
+                        TraceBranch("Notification.ToastTask.Start");
+
+                        ShowToastNotification(
+                            gameName,
+                            screenshotPath,
+                            isAutoCapture);
+
+                        TraceBranch("Notification.ToastTask.End");
+                    });
                 }
                 else
                 {
-                    ShowPlayniteNotification(gameName, screenshotPath, isAutoCapture);
+                    TraceBranch("Notification.Dispatch: Playnite");
+
+                    ShowPlayniteNotification(
+                        gameName,
+                        screenshotPath,
+                        isAutoCapture);
+
+                    TraceBranch("Notification.PlayniteCall.Returned");
                 }
             }
             catch (Exception ex)
             {
-                logger.Error(ex, "Failed to show screenshot notification");
+                logger.Error(
+                    ex,
+                    "Failed to show screenshot notification");
+
+                TraceBranch(
+                    $"Notification.Exception: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -75,12 +231,20 @@ namespace SharpMemories
                     .AddText($"截图已保存: {fileName}")
                     .AddText($"方式: {actionText} | 位置: {Path.GetDirectoryName(screenshotPath)}");
 
+                TraceBranch("WindowsToast.Show: Calling");
+
                 toastBuilder.Show();
+
+                TraceBranch("WindowsToast.Show: ReturnedSuccessfully");
+
                 logger.Info($"Toast notification shown for: {gameName}");
             }
             catch (Exception ex)
             {
                 logger.Error(ex, "Failed to show toast notification");
+
+                TraceBranch(
+                    $"WindowsToast.Show: Exception={ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -92,6 +256,8 @@ namespace SharpMemories
             var actionText = isAutoCapture ? "自动截图" : "手动截图";
             var message = $"{gameName}: 截图已保存 [{actionText}]";
 
+            TraceBranch("PlayniteNotification.Add: Calling");
+
             playniteApi.Notifications.Add(
                 new NotificationMessage(
                     Guid.NewGuid().ToString(),
@@ -99,6 +265,7 @@ namespace SharpMemories
                     NotificationType.Info
                 )
             );
+            TraceBranch("PlayniteNotification.Add: ReturnedSuccessfully");
             logger.Info($"Playnite notification shown for: {gameName}");
         }
 

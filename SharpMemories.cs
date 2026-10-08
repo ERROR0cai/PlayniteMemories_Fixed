@@ -36,7 +36,10 @@ namespace SharpMemories
             settings = new SharpMemoriesSettingsViewModel(this);
 
             // 初始化 MessagesHandler
-            messagesHandler = new MessagesHandler(PlayniteApi, settings.Settings);
+            messagesHandler = new MessagesHandler(
+                PlayniteApi,
+                settings.Settings,
+                () => settings.Settings);
 
             // 传递 messagesHandler 给 ScreenshotCaptureManager
             screenshotCapture = new ScreenshotCaptureManager(settings, this, messagesHandler);

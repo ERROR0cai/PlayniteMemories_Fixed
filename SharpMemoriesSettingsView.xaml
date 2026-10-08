@@ -95,48 +95,328 @@
             </StackPanel>
 
             <!-- ============ 5. 截图条件设置 ============ -->
-            <Separator Margin="0,12,0,12"/>
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_ConditionTitle}" FontWeight="Bold" Margin="0,0,0,6"/>
+            <!-- 自动截图关闭时，整个区域隐藏 -->
+            <StackPanel>
 
-            <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_AllowBackgroundScreenshot}"
-                      IsChecked="{Binding Settings.AllowBackgroundScreenshot}"
-                      Margin="0,0,0,6"
-                      ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_AllowBackgroundScreenshot}"/>
+                <StackPanel.Style>
+                    <Style TargetType="{x:Type StackPanel}">
+                        <Setter Property="Visibility" Value="Visible"/>
 
-            <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_Tip_SystemPause}"
-                       Foreground="Gray" FontSize="11"
-                       Margin="0,2,0,6"/>
+                        <Style.Triggers>
+                            <DataTrigger
+                                Binding="{Binding Settings.Enabled}"
+                                Value="False">
+                                <Setter
+                                    Property="Visibility"
+                                    Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+
+                <Separator Margin="0,12,0,12"/>
+
+                <TextBlock
+                    Text="{DynamicResource LOCSharpMemories_Settings_ConditionTitle}"
+                    FontWeight="Bold"
+                    Margin="0,0,0,6"/>
+
+                <CheckBox
+                    Content="{DynamicResource LOCSharpMemories_Settings_AllowBackgroundScreenshot}"
+                    IsChecked="{Binding Settings.AllowBackgroundScreenshot}"
+                    Margin="0,0,0,6"
+                    ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_AllowBackgroundScreenshot}"/>
+
+                <TextBlock
+                    Text="{DynamicResource LOCSharpMemories_Settings_Tip_SystemPause}"
+                    Foreground="Gray"
+                    FontSize="11"
+                    Margin="0,2,0,6"/>
+
+            </StackPanel>
 
             <!-- ============ 6. 通知设置 ============ -->
+
+            <!-- ============ 截图进程模式 ============ -->
+            <Separator Margin="0,12,0,12"/>
+
+            <TextBlock
+                Text="{DynamicResource LOCSharpMemories_ProcessMode_Title}"
+                FontWeight="Bold"
+                Margin="0,0,0,6"/>
+
+            <TextBlock
+                Text="{DynamicResource LOCSharpMemories_ProcessMode_Hint}"
+                Foreground="Gray"
+                FontSize="11"
+                TextWrapping="Wrap"
+                Margin="0,0,0,10"/>
+
+            <StackPanel>
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers><DataTrigger Binding="{Binding Settings.Enabled}" Value="False">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
+            <!-- 自动截图进程模式 -->
+            <TextBlock
+                Text="{DynamicResource LOCSharpMemories_ProcessMode_AutoTitle}"
+                FontWeight="SemiBold"
+                Margin="0,0,0,6"/>
+
+            <TextBlock
+                Text="{DynamicResource LOCSharpMemories_ProcessMode_AutoHint}"
+                Foreground="Gray"
+                FontSize="11"
+                TextWrapping="Wrap"
+                Margin="0,0,0,6"/>
+
+            <!-- 自动截图：黑名单 / 白名单模式 -->
+            <StackPanel
+                Orientation="Horizontal"
+                VerticalAlignment="Center"
+                Margin="0,0,0,8">
+
+                <TextBlock
+                    Text="{DynamicResource LOCSharpMemories_ProcessMode_Select}"
+                    VerticalAlignment="Center"
+                    Margin="0,0,8,0"/>
+
+                <ComboBox
+                    Width="130"
+                    SelectedIndex="{Binding Settings.AutoScreenshotProcessMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+
+                    <ComboBoxItem
+                        Content="{DynamicResource LOCSharpMemories_ProcessMode_Blacklist}"/>
+
+                    <ComboBoxItem
+                        Content="{DynamicResource LOCSharpMemories_ProcessMode_Whitelist}"/>
+
+                </ComboBox>
+            </StackPanel>
+
+            <ListBox
+                x:Name="AutoBlacklistList"
+                ItemsSource="{Binding AutoBlacklistItems}"
+                Height="95"
+                Width="320"
+                HorizontalAlignment="Left"
+                Margin="0,0,0,6"/>
+
+            <StackPanel
+                Orientation="Horizontal"
+                Margin="0,0,0,12">
+
+                <TextBox
+                    x:Name="AutoBlacklistInput"
+                    Width="220"
+                    VerticalAlignment="Center"
+                    ToolTip="game.exe"/>
+
+                <Button
+                    Content="{DynamicResource LOCSharpMemories_Blacklist_Add}"
+                    Click="AddAutoBlacklist_Click"
+                    Margin="6,0,0,0"
+                    MinWidth="60"/>
+
+                <Button
+                    Content="{DynamicResource LOCSharpMemories_Blacklist_Remove}"
+                    Click="RemoveAutoBlacklist_Click"
+                    Margin="6,0,0,0"
+                    MinWidth="60"/>
+
+            </StackPanel>
+
+            </StackPanel>
+
+            <StackPanel>
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers><DataTrigger Binding="{Binding Settings.EnableHotkey}" Value="False">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
+            <!-- 手动截图进程模式 -->
+            <TextBlock
+                Text="{DynamicResource LOCSharpMemories_ProcessMode_ManualTitle}"
+                FontWeight="SemiBold"
+                Margin="0,0,0,6"/>
+
+            <TextBlock
+                Text="{DynamicResource LOCSharpMemories_ProcessMode_ManualHint}"
+                Foreground="Gray"
+                FontSize="11"
+                TextWrapping="Wrap"
+                Margin="0,0,0,6"/>
+
+            <!-- 手动截图：黑名单 / 白名单模式 -->
+            <StackPanel
+                Orientation="Horizontal"
+                VerticalAlignment="Center"
+                Margin="0,0,0,8">
+
+                <TextBlock
+                    Text="{DynamicResource LOCSharpMemories_ProcessMode_Select}"
+                    VerticalAlignment="Center"
+                    Margin="0,0,8,0"/>
+
+                <ComboBox
+                    Width="130"
+                    SelectedIndex="{Binding Settings.ManualScreenshotProcessMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+
+                    <ComboBoxItem
+                        Content="{DynamicResource LOCSharpMemories_ProcessMode_Blacklist}"/>
+
+                    <ComboBoxItem
+                        Content="{DynamicResource LOCSharpMemories_ProcessMode_Whitelist}"/>
+
+                </ComboBox>
+            </StackPanel>
+
+            <ListBox
+                x:Name="ManualBlacklistList"
+                ItemsSource="{Binding ManualBlacklistItems}"
+                Height="95"
+                Width="320"
+                HorizontalAlignment="Left"
+                Margin="0,0,0,6"/>
+
+            <StackPanel
+                Orientation="Horizontal"
+                Margin="0,0,0,6">
+
+                <TextBox
+                    x:Name="ManualBlacklistInput"
+                    Width="220"
+                    VerticalAlignment="Center"
+                    ToolTip="playnite.desktopapp.exe"/>
+
+                <Button
+                    Content="{DynamicResource LOCSharpMemories_Blacklist_Add}"
+                    Click="AddManualBlacklist_Click"
+                    Margin="6,0,0,0"
+                    MinWidth="60"/>
+
+                <Button
+                    Content="{DynamicResource LOCSharpMemories_Blacklist_Remove}"
+                    Click="RemoveManualBlacklist_Click"
+                    Margin="6,0,0,0"
+                    MinWidth="60"/>
+
+            </StackPanel>
+
+            </StackPanel>
+
             <Separator Margin="0,12,0,12"/>
             <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_NotificationTitle}" FontWeight="Bold" Margin="0,0,0,6"/>
-
+            <CheckBox Content="{DynamicResource LOCSharpMemories_NotificationDebug}"
+                      IsChecked="{Binding Settings.EnableNotificationDebug, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      Margin="0,4,0,8"/>
             <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_EnableNotifications}"
                       IsChecked="{Binding Settings.EnableNotifications}" Margin="0,0,0,6"/>
-
-            <StackPanel Margin="20,0,0,6" IsEnabled="{Binding Settings.EnableNotifications}">
+            <!-- Auto screenshot notifications -->
+            <StackPanel Margin="20,0,0,8">
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Settings.EnableNotifications}" Value="True"/>
+                        <Condition Binding="{Binding Settings.Enabled}" Value="True"/>
+                    </MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/>
+                    </MultiDataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
                 <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_AutoNotification}"
-                          IsChecked="{Binding Settings.EnableAutoScreenshotNotification}" Margin="0,2"/>
-                <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_ManualNotification}"
-                          IsChecked="{Binding Settings.EnableManualScreenshotNotification}" Margin="0,2"/>
+                          IsChecked="{Binding Settings.EnableAutoScreenshotNotification}" Margin="0,4,0,6"/>
+                <StackPanel Margin="16,0,0,6">
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Settings.EnableNotifications}" Value="True"/>
+                        <Condition Binding="{Binding Settings.Enabled}" Value="True"/>
+                        <Condition Binding="{Binding Settings.EnableAutoScreenshotNotification}" Value="True"/>
+                    </MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/>
+                    </MultiDataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_NotificationMode_AutoHint}"
+                               Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="{DynamicResource LOCSharpMemories_ProcessMode_Select}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox Width="140" SelectedIndex="{Binding Settings.AutoNotificationProcessMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                            <ComboBoxItem Content="{DynamicResource LOCSharpMemories_ProcessMode_Blacklist}"/>
+                            <ComboBoxItem Content="{DynamicResource LOCSharpMemories_ProcessMode_Whitelist}"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <ListBox x:Name="AutoNotificationList" ItemsSource="{Binding AutoNotificationItems}"
+                             Height="90" Width="320" HorizontalAlignment="Left" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBox x:Name="AutoNotificationInput" Width="220" ToolTip="game.exe"/>
+                        <Button Content="{DynamicResource LOCSharpMemories_Blacklist_Add}"
+                                Click="AddAutoNotification_Click" Margin="6,0,0,0" MinWidth="60"/>
+                        <Button Content="{DynamicResource LOCSharpMemories_Blacklist_Remove}"
+                                Click="RemoveAutoNotification_Click" Margin="6,0,0,0" MinWidth="60"/>
+                    </StackPanel>
+                </StackPanel>
             </StackPanel>
-
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6"
-                        IsEnabled="{Binding Settings.EnableNotifications}">
+            <!-- Manual screenshot notifications -->
+            <StackPanel Margin="20,0,0,8">
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Settings.EnableNotifications}" Value="True"/>
+                        <Condition Binding="{Binding Settings.EnableHotkey}" Value="True"/>
+                    </MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/>
+                    </MultiDataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
+                <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_ManualNotification}"
+                          IsChecked="{Binding Settings.EnableManualScreenshotNotification}" Margin="0,4,0,6"/>
+                <StackPanel Margin="16,0,0,6">
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Settings.EnableNotifications}" Value="True"/>
+                        <Condition Binding="{Binding Settings.EnableHotkey}" Value="True"/>
+                        <Condition Binding="{Binding Settings.EnableManualScreenshotNotification}" Value="True"/>
+                    </MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/>
+                    </MultiDataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_NotificationMode_ManualHint}"
+                               Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="{DynamicResource LOCSharpMemories_ProcessMode_Select}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox Width="140" SelectedIndex="{Binding Settings.ManualNotificationProcessMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                            <ComboBoxItem Content="{DynamicResource LOCSharpMemories_ProcessMode_Blacklist}"/>
+                            <ComboBoxItem Content="{DynamicResource LOCSharpMemories_ProcessMode_Whitelist}"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <ListBox x:Name="ManualNotificationList" ItemsSource="{Binding ManualNotificationItems}"
+                             Height="90" Width="320" HorizontalAlignment="Left" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBox x:Name="ManualNotificationInput" Width="220" ToolTip="game.exe"/>
+                        <Button Content="{DynamicResource LOCSharpMemories_Blacklist_Add}"
+                                Click="AddManualNotification_Click" Margin="6,0,0,0" MinWidth="60"/>
+                        <Button Content="{DynamicResource LOCSharpMemories_Blacklist_Remove}"
+                                Click="RemoveManualNotification_Click" Margin="6,0,0,0" MinWidth="60"/>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,6">
+                <StackPanel.Style><Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Settings.EnableNotifications}" Value="True"/>
+                    </MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/>
+                    </MultiDataTrigger></Style.Triggers>
+                </Style></StackPanel.Style>
                 <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_NotificationStyle}"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <ComboBox
-                    ItemsSource="{Binding Settings.NotificationStyleOptions}"
-                    DisplayMemberPath="DisplayName"
-                    SelectedValuePath="Value"
-                    SelectedValue="{Binding Settings.NotificationStyle}"
-                    Width="150"
-                    VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding Settings.NotificationStyleOptions}"
+                          DisplayMemberPath="DisplayName" SelectedValuePath="Value"
+                          SelectedValue="{Binding Settings.NotificationStyle}" Width="150"/>
             </StackPanel>
-
             <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_NotificationHint}"
-                       Foreground="Gray" FontSize="11"
-                       Margin="0,2,0,6"/>
+                       Foreground="Gray" FontSize="11" Margin="0,2,0,6"/>
 
             <!-- ============ 7. 热键设置 ============ -->
             <Separator Margin="0,12,0,12"/>

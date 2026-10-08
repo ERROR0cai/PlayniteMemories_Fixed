@@ -136,5 +136,119 @@ namespace SharpMemories
                 // ignore UI errors
             }
         }
+
+
+        // ========== 自动截图黑名单 ==========
+
+        private void AddAutoBlacklist_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+
+            if (vm == null)
+                return;
+
+            string input = AutoBlacklistInput.Text;
+
+            string normalized =
+                SharpMemoriesSettings.NormalizeProcessName(input);
+
+            if (string.IsNullOrEmpty(normalized))
+                return;
+
+            vm.AddAutoBlacklistItem(normalized);
+
+            AutoBlacklistInput.Clear();
+        }
+
+        private void RemoveAutoBlacklist_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+
+            if (vm == null)
+                return;
+
+            string selected =
+                AutoBlacklistList.SelectedItem as string;
+
+            if (string.IsNullOrEmpty(selected))
+                return;
+
+            vm.AutoBlacklistItems.Remove(selected);
+        }
+
+        // ========== 手动截图黑名单 ==========
+
+        private void AddManualBlacklist_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+
+            if (vm == null)
+                return;
+
+            string input = ManualBlacklistInput.Text;
+
+            string normalized =
+                SharpMemoriesSettings.NormalizeProcessName(input);
+
+            if (string.IsNullOrEmpty(normalized))
+                return;
+
+            vm.AddManualBlacklistItem(normalized);
+
+            ManualBlacklistInput.Clear();
+        }
+
+        private void RemoveManualBlacklist_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+
+            if (vm == null)
+                return;
+
+            string selected =
+                ManualBlacklistList.SelectedItem as string;
+
+            if (string.IsNullOrEmpty(selected))
+                return;
+
+            vm.ManualBlacklistItems.Remove(selected);
+        }
+        private void AddAutoNotification_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+            if (vm == null) return;
+            vm.AddAutoNotificationItem(AutoNotificationInput.Text);
+            AutoNotificationInput.Clear();
+        }
+
+        private void RemoveAutoNotification_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+            var name = AutoNotificationList.SelectedItem as string;
+            if (vm != null && name != null) vm.AutoNotificationItems.Remove(name);
+        }
+
+        private void AddManualNotification_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+            if (vm == null) return;
+            vm.AddManualNotificationItem(ManualNotificationInput.Text);
+            ManualNotificationInput.Clear();
+        }
+
+        private void RemoveManualNotification_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as SharpMemoriesSettingsViewModel;
+            var name = ManualNotificationList.SelectedItem as string;
+            if (vm != null && name != null) vm.ManualNotificationItems.Remove(name);
+        }
     }
 }

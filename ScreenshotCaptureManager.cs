@@ -1,8 +1,9 @@
-using Playnite.SDK;
+﻿using Playnite.SDK;
 using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,6 +21,155 @@ namespace SharpMemories
         private int currentGameProcessId = 0;
         private string currentGameTitle = null;
         private readonly object captureLock = new object();
+
+        // ========== 进程黑名单识别 ==========
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(
+            IntPtr hWnd,
+            out uint processId);
+
+        /// <summary>
+        /// 根据 PID 获取进程可执行文件名。
+        /// 例如 playnite.desktopapp.exe。
+        /// </summary>
+        private static string GetProcessFileName(int processId)
+        {
+            if (processId <= 0)
+                return null;
+
+            try
+            {
+                using (var process = Process.GetProcessById(processId))
+                {
+                    // ProcessName 不带 .exe 后缀。
+                    return SharpMemoriesSettings.NormalizeProcessName(
+                        process.ProcessName);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Debug(
+                    $"Unable to resolve process {processId}: {ex.Message}");
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 获取当前前台窗口所属进程的可执行文件名。
+        /// </summary>
+        private static string GetForegroundProcessFileName()
+        {
+            try
+            {
+                IntPtr hWnd = GetForegroundWindow();
+
+                if (hWnd == IntPtr.Zero)
+                    return null;
+
+                uint processId;
+                GetWindowThreadProcessId(hWnd, out processId);
+
+                if (processId == 0 || processId > int.MaxValue)
+                    return null;
+
+                return GetProcessFileName((int)processId);
+            }
+            catch (Exception ex)
+            {
+                logger.Debug(
+                    $"Unable to resolve foreground process: {ex.Message}");
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 自动截图黑名单：检查 Playnite 追踪的游戏 PID。
+        /// </summary>
+        private bool IsAutoScreenshotBlocked(int processId)
+        {
+            string processName = GetProcessFileName(processId);
+
+            if (string.IsNullOrEmpty(processName))
+            {
+                logger.Warn(
+                    $"Auto capture skipped: unable to identify PID {processId}");
+
+                return true;
+            }
+
+            var currentSettings = settings?.Settings;
+
+            if (currentSettings == null)
+            {
+                logger.Warn(
+                    "Auto screenshot skipped: settings unavailable");
+
+                return true;
+            }
+
+            bool blocked =
+                currentSettings.IsAutoScreenshotProcessBlocked(processName);
+
+            if (blocked)
+            {
+                string modeName =
+                    currentSettings.AutoScreenshotProcessMode == 1
+                        ? "Whitelist"
+                        : "Blacklist";
+
+                logger.Info(
+                    $"Auto screenshot blocked by {modeName} mode: {processName}");
+            }
+
+            return blocked;
+        }
+
+        /// <summary>
+        /// 手动截图黑名单：检查当前前台窗口所属进程。
+        /// </summary>
+        private bool IsManualScreenshotBlocked(string processName)
+        {
+
+            if (string.IsNullOrEmpty(processName))
+            {
+                logger.Warn(
+                    "Manual capture skipped: foreground process unknown");
+
+                return true;
+            }
+
+            var currentSettings = settings?.Settings;
+
+            if (currentSettings == null)
+            {
+                logger.Warn(
+                    "Manual screenshot skipped: settings unavailable");
+
+                return true;
+            }
+
+            bool blocked =
+                currentSettings.IsManualScreenshotProcessBlocked(processName);
+
+            if (blocked)
+            {
+                string modeName =
+                    currentSettings.ManualScreenshotProcessMode == 1
+                        ? "Whitelist"
+                        : "Blacklist";
+
+                logger.Info(
+                    $"Manual screenshot blocked by {modeName} mode: {processName}");
+            }
+
+            return blocked;
+        }
 
         // 构造函数（修改）
         public ScreenshotCaptureManager(SharpMemoriesSettingsViewModel settings, SharpMemories plugin, MessagesHandler messagesHandler)
@@ -79,21 +229,58 @@ namespace SharpMemories
 
         public void CaptureOnDemand(int processId, string gameTitle)
         {
-            logger.Info($"On-demand screenshot capture triggered for '{gameTitle}'");
+            logger.Info(
+                $"On-demand screenshot capture triggered for '{gameTitle}'");
+            messagesHandler?.TraceNotification(
+                "ManualCapture.Triggered",
+                false);
 
-            // 修改：获取截图结果并显示通知
-            string savedPath = CaptureOnce(processId, gameTitle, false);
+            // 在按键时固定前台进程名，截图和通知使用同一份结果。
+            string foregroundProcessName = GetForegroundProcessFileName();
+            if (IsManualScreenshotBlocked(foregroundProcessName))
+            {
+                messagesHandler?.TraceNotification(
+                    "ManualCapture.BlockedByBlacklist",
+                    false);
 
-            // 手动截图完成通知
-            if (!string.IsNullOrEmpty(savedPath) && messagesHandler != null)
+                logger.Debug(
+                    $"Manual screenshot skipped by process mode: {gameTitle}");
+
+                return;
+            }
+
+            string savedPath =
+                CaptureOnce(processId, gameTitle, false);
+
+            messagesHandler?.TraceNotification(
+                string.IsNullOrEmpty(savedPath)
+                    ? "ManualCapture.NoSavedFile"
+                    : "ManualCapture.FileSaved",
+                false);
+
+            // 截图失败时不显示成功反馈。
+            if (string.IsNullOrEmpty(savedPath))
+                return;
+
+            if (messagesHandler != null)
             {
                 try
                 {
-                    messagesHandler.ShowScreenshotNotification(gameTitle, savedPath, false);
+                    messagesHandler.TraceNotification(
+                        "ManualCapture.BeforeNotificationCall",
+                        false);
+
+                    messagesHandler.ShowScreenshotNotification(
+                        gameTitle,
+                        savedPath,
+                        false,
+                        foregroundProcessName);
                 }
                 catch (Exception ex)
                 {
-                    logger.Error(ex, "Failed to show notification for manual screenshot");
+                    logger.Error(
+                        ex,
+                        "Failed to show notification for manual screenshot");
                 }
             }
 
@@ -101,9 +288,11 @@ namespace SharpMemories
             {
                 System.Media.SystemSounds.Asterisk.Play();
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                logger.Error(e, "Error playing sound on screenshot capture");
+                logger.Error(
+                    ex,
+                    "Error playing sound on screenshot capture");
             }
         }
 
@@ -152,16 +341,32 @@ namespace SharpMemories
                     {
                         if (!CanPerformAutoScreenshot(processId, gameTitle))
                         {
-                            logger.Debug($"Screenshot skipped for '{gameTitle}' - conditions not met");
+                            messagesHandler?.TraceNotification(
+                                "AutoCapture.ConditionsNotMet",
+                                true);
+
+                            logger.Debug(
+                                $"Screenshot skipped for '{gameTitle}' - conditions not met");
+
                             return;
                         }
                         string savedPath = CaptureOnce(processId, gameTitle, true);
+
+                        messagesHandler?.TraceNotification(
+                            string.IsNullOrEmpty(savedPath)
+                                ? "AutoCapture.NoSavedFile"
+                                : "AutoCapture.FileSaved",
+                            true);
 
                         if (!string.IsNullOrEmpty(savedPath) && messagesHandler != null)
                         {
                             try
                             {
-                                messagesHandler.ShowScreenshotNotification(gameTitle, savedPath, true);
+                                messagesHandler.TraceNotification(
+                                    "AutoCapture.BeforeNotificationCall",
+                                    true);
+                                messagesHandler.ShowScreenshotNotification(
+                                    gameTitle, savedPath, true, GetProcessFileName(processId));
                             }
                             catch (Exception ex)
                             {
@@ -183,6 +388,16 @@ namespace SharpMemories
         private bool CanPerformAutoScreenshot(int processId, string gameTitle)
         {
             logger.Debug($"🔍 CanPerformAutoScreenshot() for '{gameTitle}' (PID: {processId})");
+
+            // 优先检查自动截图黑名单。
+            // 匹配 Playnite 正在追踪的游戏进程。
+            if (IsAutoScreenshotBlocked(processId))
+            {
+                logger.Debug(
+                    $"Auto screenshot skipped by process mode: {gameTitle}");
+
+                return false;
+            }
 
             // 1. 检查系统是否锁屏或息屏
             bool canTake = ScreenCapture.CanTakeScreenshot();
@@ -252,6 +467,13 @@ namespace SharpMemories
         private string CaptureOnce(int processId, string gameTitle, bool isAutoCapture)
         {
             string savedPath = null;
+
+            // 自动截图再次确认黑名单，防止进入截图流程前
+            // 黑名单发生变化，或其他调用路径绕过条件检查。
+            if (isAutoCapture && IsAutoScreenshotBlocked(processId))
+            {
+                return null;
+            }
 
             try
             {

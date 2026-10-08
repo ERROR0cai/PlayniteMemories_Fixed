@@ -3,6 +3,7 @@ using Playnite.SDK.Data;
 using Playnite.SDK.Plugins;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
 
@@ -129,6 +130,176 @@ namespace SharpMemories
             set => SetValue(ref _allowBackgroundScreenshot, value);
         }
 
+        // ========== 进程黑名单设置 ==========
+
+        // ========== 截图进程模式 ==========
+        // 0 = 黑名单模式（默认）
+        // 1 = 白名单模式
+
+        private int _autoScreenshotProcessMode = 0;
+        private int _manualScreenshotProcessMode = 0;
+
+        // 自动截图和手动截图的进程名单
+        // 保留原字段名称，兼容此前保存的配置
+        private List<string> _autoScreenshotBlacklist = new List<string>();
+        private List<string> _manualScreenshotBlacklist = new List<string>();
+
+        /// <summary>
+        /// 自动截图进程模式。
+        /// 0：黑名单；1：白名单。
+        /// </summary>
+        public int AutoScreenshotProcessMode
+        {
+            get => _autoScreenshotProcessMode;
+            set => SetValue(
+                ref _autoScreenshotProcessMode,
+                value == 1 ? 1 : 0);
+        }
+
+        /// <summary>
+        /// 手动截图进程模式。
+        /// 0：黑名单；1：白名单。
+        /// </summary>
+        public int ManualScreenshotProcessMode
+        {
+            get => _manualScreenshotProcessMode;
+            set => SetValue(
+                ref _manualScreenshotProcessMode,
+                value == 1 ? 1 : 0);
+        }
+
+        /// <summary>
+        /// 自动截图黑名单：匹配 Playnite 追踪的游戏进程。
+        /// </summary>
+        public List<string> AutoScreenshotBlacklist
+        {
+            get => _autoScreenshotBlacklist;
+            set => SetValue(
+                ref _autoScreenshotBlacklist,
+                value ?? new List<string>());
+        }
+
+        /// <summary>
+        /// 手动截图黑名单：匹配按键时的前台窗口进程。
+        /// </summary>
+        public List<string> ManualScreenshotBlacklist
+        {
+            get => _manualScreenshotBlacklist;
+            set => SetValue(
+                ref _manualScreenshotBlacklist,
+                value ?? new List<string>());
+        }
+
+        /// <summary>
+        /// 规范化进程文件名。
+        /// </summary>
+        public static string NormalizeProcessName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return string.Empty;
+
+            string result = name.Trim().ToLowerInvariant();
+
+            if (result.IndexOfAny(
+                System.IO.Path.GetInvalidFileNameChars()) >= 0 ||
+                result.Contains("\\") ||
+                result.Contains("/") ||
+                result == "." ||
+                result == "..")
+            {
+                return string.Empty;
+            }
+
+            if (!result.EndsWith(".exe",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                result += ".exe";
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 是否命中自动截图黑名单。
+        /// </summary>
+        public bool IsAutoScreenshotBlacklisted(string processName)
+        {
+            return IsBlacklisted(AutoScreenshotBlacklist, processName);
+        }
+
+        /// <summary>
+        /// 是否命中手动截图黑名单。
+        /// </summary>
+        public bool IsManualScreenshotBlacklisted(string processName)
+        {
+            return IsBlacklisted(ManualScreenshotBlacklist, processName);
+        }
+
+        private static bool IsBlacklisted(
+            IEnumerable<string> blacklist,
+            string processName)
+        {
+            string normalized = NormalizeProcessName(processName);
+
+            if (string.IsNullOrEmpty(normalized) || blacklist == null)
+                return false;
+
+            return blacklist.Any(item =>
+                string.Equals(
+                    NormalizeProcessName(item),
+                    normalized,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+
+        /// <summary>
+        /// 根据黑名单或白名单模式判断是否禁止截图。
+        /// 黑名单：命中则禁止。
+        /// 白名单：未命中则禁止。
+        /// </summary>
+        private static bool IsBlockedByProcessMode(
+            IEnumerable<string> processList,
+            string processName,
+            int mode)
+        {
+            string normalized = NormalizeProcessName(processName);
+
+            // 无法识别进程时，保守处理。
+            if (string.IsNullOrEmpty(normalized))
+                return true;
+
+            bool matched = IsBlacklisted(processList, normalized);
+
+            // 白名单模式：没有命中就禁止。
+            if (mode == 1)
+                return !matched;
+
+            // 黑名单模式：命中才禁止。
+            return matched;
+        }
+
+        /// <summary>
+        /// 自动截图是否被当前进程模式禁止。
+        /// </summary>
+        public bool IsAutoScreenshotProcessBlocked(string processName)
+        {
+            return IsBlockedByProcessMode(
+                AutoScreenshotBlacklist,
+                processName,
+                AutoScreenshotProcessMode);
+        }
+
+        /// <summary>
+        /// 手动截图是否被当前进程模式禁止。
+        /// </summary>
+        public bool IsManualScreenshotProcessBlocked(string processName)
+        {
+            return IsBlockedByProcessMode(
+                ManualScreenshotBlacklist,
+                processName,
+                ManualScreenshotProcessMode);
+        }
+
         // ========== 截图后缀设置 ==========
 
         private string _autoScreenshotSuffix = "";
@@ -153,6 +324,59 @@ namespace SharpMemories
         }
 
         // ========== 通知设置 ==========
+
+        // ========== 通知诊断设置 ==========
+
+        private bool _enableNotificationDebug = false;
+
+        /// <summary>
+        /// 是否启用通知诊断日志。
+        /// 默认关闭，不影响正常截图。
+        /// </summary>
+        public bool EnableNotificationDebug
+        {
+            get => _enableNotificationDebug;
+            set => SetValue(ref _enableNotificationDebug, value);
+        }
+
+        // 通知进程名单：自动和手动通知分别保存，默认黑名单（0）。
+        private int _autoNotificationProcessMode = 0;
+        private int _manualNotificationProcessMode = 0;
+        private List<string> _autoNotificationProcessList = new List<string>();
+        private List<string> _manualNotificationProcessList = new List<string>();
+
+        public int AutoNotificationProcessMode
+        {
+            get => _autoNotificationProcessMode;
+            set => SetValue(ref _autoNotificationProcessMode, value == 1 ? 1 : 0);
+        }
+
+        public int ManualNotificationProcessMode
+        {
+            get => _manualNotificationProcessMode;
+            set => SetValue(ref _manualNotificationProcessMode, value == 1 ? 1 : 0);
+        }
+
+        public List<string> AutoNotificationProcessList
+        {
+            get => _autoNotificationProcessList;
+            set => SetValue(ref _autoNotificationProcessList, value ?? new List<string>());
+        }
+
+        public List<string> ManualNotificationProcessList
+        {
+            get => _manualNotificationProcessList;
+            set => SetValue(ref _manualNotificationProcessList, value ?? new List<string>());
+        }
+
+        // 进程未知时拒绝通知；黑名单为空时允许，白名单为空时禁止。
+        public bool IsScreenshotNotificationProcessBlocked(string processName, bool isAuto)
+        {
+            return IsBlockedByProcessMode(
+                isAuto ? AutoNotificationProcessList : ManualNotificationProcessList,
+                processName,
+                isAuto ? AutoNotificationProcessMode : ManualNotificationProcessMode);
+        }
 
         private bool _enableNotifications = true;
         private bool _enableAutoScreenshotNotification = true;
@@ -227,6 +451,82 @@ namespace SharpMemories
             }
         }
 
+        // ========== 黑名单界面数据 ==========
+
+        private ObservableCollection<string> autoBlacklistItems =
+            new ObservableCollection<string>();
+
+        private ObservableCollection<string> manualBlacklistItems =
+            new ObservableCollection<string>();
+
+        public ObservableCollection<string> AutoBlacklistItems
+        {
+            get => autoBlacklistItems;
+            set => SetValue(ref autoBlacklistItems, value);
+        }
+
+        public ObservableCollection<string> ManualBlacklistItems
+        {
+            get => manualBlacklistItems;
+            set => SetValue(ref manualBlacklistItems, value);
+        }
+
+        public void AddAutoBlacklistItem(string name)
+        {
+            AddBlacklistItem(AutoBlacklistItems, name);
+        }
+
+        public void AddManualBlacklistItem(string name)
+        {
+            AddBlacklistItem(ManualBlacklistItems, name);
+        }
+
+        private static void AddBlacklistItem(
+            ObservableCollection<string> collection,
+            string name)
+        {
+            string normalized =
+                SharpMemoriesSettings.NormalizeProcessName(name);
+
+            if (string.IsNullOrEmpty(normalized))
+                return;
+
+            if (!collection.Any(item =>
+                string.Equals(
+                    item,
+                    normalized,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                collection.Add(normalized);
+            }
+        }
+
+        // 通知名单的界面编辑集合；保存和取消编辑与截图名单一致。
+        private ObservableCollection<string> autoNotificationItems = new ObservableCollection<string>();
+        private ObservableCollection<string> manualNotificationItems = new ObservableCollection<string>();
+
+        public ObservableCollection<string> AutoNotificationItems
+        {
+            get => autoNotificationItems;
+            set => SetValue(ref autoNotificationItems, value);
+        }
+
+        public ObservableCollection<string> ManualNotificationItems
+        {
+            get => manualNotificationItems;
+            set => SetValue(ref manualNotificationItems, value);
+        }
+
+        public void AddAutoNotificationItem(string name)
+        {
+            AddBlacklistItem(AutoNotificationItems, name);
+        }
+
+        public void AddManualNotificationItem(string name)
+        {
+            AddBlacklistItem(ManualNotificationItems, name);
+        }
+
         private bool isRecordingHotkey = false;
         public bool IsRecordingHotkey
         {
@@ -279,6 +579,30 @@ namespace SharpMemories
         {
             editingClone = Serialization.GetClone(Settings);
 
+            AutoBlacklistItems = new ObservableCollection<string>(
+                (Settings.AutoScreenshotBlacklist ?? new List<string>())
+                .Select(SharpMemoriesSettings.NormalizeProcessName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
+            ManualBlacklistItems = new ObservableCollection<string>(
+                (Settings.ManualScreenshotBlacklist ?? new List<string>())
+                .Select(SharpMemoriesSettings.NormalizeProcessName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
+            AutoNotificationItems = new ObservableCollection<string>(
+                (Settings.AutoNotificationProcessList ?? new List<string>())
+                .Select(SharpMemoriesSettings.NormalizeProcessName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
+            ManualNotificationItems = new ObservableCollection<string>(
+                (Settings.ManualNotificationProcessList ?? new List<string>())
+                .Select(SharpMemoriesSettings.NormalizeProcessName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+
             try
             {
                 var plugins = plugin.PlayniteApi.Addons.Plugins.OfType<LibraryPlugin>().ToList();
@@ -313,6 +637,15 @@ namespace SharpMemories
                     Settings.SetHotkeyEnabledForLibrary(libraryPlugin.Id, libraryPlugin.IsHotkeyEnabled);
                 }
             }
+            Settings.AutoScreenshotBlacklist =
+                AutoBlacklistItems.ToList();
+
+            Settings.ManualScreenshotBlacklist =
+                ManualBlacklistItems.ToList();
+
+            Settings.AutoNotificationProcessList = AutoNotificationItems.ToList();
+            Settings.ManualNotificationProcessList = ManualNotificationItems.ToList();
+
             plugin.SavePluginSettings(Settings);
         }
 
