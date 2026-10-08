@@ -1,4 +1,5 @@
-<img width="780" height="1462" alt="image" src="https://github.com/user-attachments/assets/1ef4b840-6c6a-4d58-92fb-8a8c55fc3924" />
+<img width="961" height="2866" alt="image" src="https://github.com/user-attachments/assets/d3431753-3744-44eb-a918-c59e25722299" />
+
 
 
 基于John Wuller的[SharpMemories](https://github.com/2br-2b/PlayniteMemories)：
@@ -9,8 +10,12 @@
 - 可选调用API刷新[screenshotsvisualizer_Fixed](https://github.com/ERROR0cai/screenshotsvisualizer_Fixed)
 <img width="941" height="53" alt="image" src="https://github.com/user-attachments/assets/236b3a39-de3a-478d-9aa9-2ae791375d33" />
 
-- 加入通知功能
-<img width="397" height="311" alt="image" src="https://github.com/user-attachments/assets/e79c4c60-d09b-47de-9f2f-824be7edc32a" />
+- 加入截图黑白名单模式
+<img width="997" height="763" alt="image" src="https://github.com/user-attachments/assets/852ca297-8992-4d4c-ab59-878c33f2640b" />
+
+- 加入通知功能及其黑白名单模式
+<img width="664" height="948" alt="image" src="https://github.com/user-attachments/assets/720b44a9-c4dc-43c8-8736-cbc0bc1afa53" />
+
 
 - 加入测试功能（当间隔设置为0时，每10秒自动截图1次）
 <img width="546" height="57" alt="image" src="https://github.com/user-attachments/assets/0e851d25-d924-40f4-9d2b-b237b9ebaae1" />
