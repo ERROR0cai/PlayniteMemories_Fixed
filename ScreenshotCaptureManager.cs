@@ -21,6 +21,35 @@ namespace SharpMemories
         private int currentGameProcessId = 0;
         private string currentGameTitle = null;
         private readonly object captureLock = new object();
+        private readonly object screenshotSaveLock = new object();
+        private DateTime nextCaptureUtc;
+        private long captureGeneration;
+        private bool captureRunning;
+
+        private TimeSpan GetInterval()
+        {
+            int minutes = settings?.Settings?.IntervalMinutes ?? 30;
+            return minutes <= 0 ? TimeSpan.FromSeconds(10) : TimeSpan.FromMinutes(minutes);
+        }
+
+        public bool IsRunningFor(int processId, string gameTitle)
+        {
+            lock (captureLock)
+                return captureRunning && currentGameProcessId == processId &&
+                    string.Equals(currentGameTitle, gameTitle, StringComparison.Ordinal);
+        }
+
+        // Saving settings resets the countdown from the time of saving.
+        public void UpdateInterval()
+        {
+            lock (captureLock)
+            {
+                if (!captureRunning) return;
+                nextCaptureUtc = DateTime.UtcNow.Add(GetInterval());
+                captureGeneration++;
+                logger.Info($"Capture interval updated: next screenshot scheduled after {GetInterval()}");
+            }
+        }
 
         // ========== 进程黑名单识别 ==========
 
@@ -181,49 +210,43 @@ namespace SharpMemories
 
         public void StartCaptureForProcess(int processId, string gameTitle)
         {
+            StopCapture();
             lock (captureLock)
             {
-                // stop any existing capture
-                if (captureCts != null)
-                {
-                    logger.Debug("Stopping existing capture before starting new one");
-                }
-                StopCapture();
-
-                logger.Debug($"Initializing capture for process {processId}, game: {gameTitle}");
                 currentGameProcessId = processId;
                 currentGameTitle = gameTitle;
-                captureCts = new CancellationTokenSource();
-                captureTask = Task.Run(() => CaptureLoop(processId, gameTitle, captureCts.Token));
+                captureRunning = true;
+                nextCaptureUtc = DateTime.UtcNow.Add(GetInterval());
+                captureGeneration++;
+                var cts = new CancellationTokenSource();
+                captureCts = cts;
+                captureTask = Task.Run(() => CaptureLoop(processId, gameTitle, cts.Token));
+                logger.Info($"Capture loop started for {gameTitle}, interval {GetInterval()}");
             }
         }
 
         public void StopCapture()
         {
+            CancellationTokenSource oldCts;
+            Task oldTask;
             lock (captureLock)
             {
-                try
-                {
-                    if (captureCts != null)
-                    {
-                        logger.Info($"Stopping capture loop for game: {currentGameTitle ?? "Unknown"}");
-                        captureCts.Cancel();
-                        try { captureTask?.Wait(2000); } catch { }
-                        captureCts.Dispose();
-                        captureCts = null;
-                        logger.Debug("Capture task cancelled and disposed");
-                    }
-                    else
-                    {
-                        logger.Debug("No active capture to stop");
-                    }
-                }
-                finally
-                {
-                    captureTask = null;
-                    currentGameProcessId = 0;
-                    currentGameTitle = null;
-                }
+                oldCts = captureCts;
+                oldTask = captureTask;
+                captureCts = null;
+                captureTask = null;
+                captureRunning = false;
+                currentGameTitle = null;
+                currentGameProcessId = 0;
+                captureGeneration++;
+                if (oldCts != null) oldCts.Cancel();
+            }
+            // Never block the Playnite UI thread. Dispose after the old worker has exited.
+            if (oldCts != null)
+            {
+                if (oldTask != null)
+                    oldTask.ContinueWith(_ => oldCts.Dispose(), TaskScheduler.Default);
+                else oldCts.Dispose();
             }
         }
 
@@ -300,88 +323,47 @@ namespace SharpMemories
         {
             try
             {
-                var intervalMinutes = settings?.Settings?.IntervalMinutes ?? 30;
-                TimeSpan interval;
-
-                // 👇 测试模式：当间隔为 0 时，每 10 秒截图一次
-                if (intervalMinutes <= 0)
-                {
-                    interval = TimeSpan.FromSeconds(10);
-                    logger.Info($"🔬 TEST MODE: Capture loop started for '{gameTitle}' with interval: 10 seconds");
-                }
-                else
-                {
-                    interval = TimeSpan.FromMinutes(intervalMinutes);
-                    logger.Info($"Capture loop started for '{gameTitle}' with interval: {intervalMinutes} minutes");
-                }
-
                 while (!token.IsCancellationRequested)
                 {
-                    try
+                    // A short cancellable wait means interval edits take effect immediately
+                    // without creating a second screenshot worker.
+                    await Task.Delay(250, token);
+                    bool due = false;
+                    lock (captureLock)
                     {
-                        if (intervalMinutes <= 0)
+                        if (captureRunning && currentGameProcessId == processId &&
+                            string.Equals(currentGameTitle, gameTitle, StringComparison.Ordinal) &&
+                            DateTime.UtcNow >= nextCaptureUtc)
                         {
-                            logger.Debug($"🔬 Test mode: Waiting 10 seconds before next capture");
+                            nextCaptureUtc = DateTime.UtcNow.Add(GetInterval());
+                            due = true;
                         }
-                        else
-                        {
-                            logger.Debug($"Waiting {intervalMinutes} minutes before next capture");
-                        }
-                        await Task.Delay(interval, token);
                     }
-                    catch (TaskCanceledException)
-                    {
-                        logger.Debug("Capture loop cancelled during delay");
-                        break;
-                    }
-
-                    if (token.IsCancellationRequested) break;
-
+                    if (!due || token.IsCancellationRequested) continue;
                     await Task.Run(() =>
                     {
-                        if (!CanPerformAutoScreenshot(processId, gameTitle))
-                        {
-                            messagesHandler?.TraceNotification(
-                                "AutoCapture.ConditionsNotMet",
-                                true);
-
-                            logger.Debug(
-                                $"Screenshot skipped for '{gameTitle}' - conditions not met");
-
+                        if (token.IsCancellationRequested || !CanPerformAutoScreenshot(processId, gameTitle))
                             return;
-                        }
+                        if (token.IsCancellationRequested) return;
                         string savedPath = CaptureOnce(processId, gameTitle, true);
-
-                        messagesHandler?.TraceNotification(
-                            string.IsNullOrEmpty(savedPath)
-                                ? "AutoCapture.NoSavedFile"
-                                : "AutoCapture.FileSaved",
-                            true);
-
-                        if (!string.IsNullOrEmpty(savedPath) && messagesHandler != null)
+                        if (!string.IsNullOrEmpty(savedPath))
                         {
                             try
                             {
-                                messagesHandler.TraceNotification(
-                                    "AutoCapture.BeforeNotificationCall",
-                                    true);
-                                messagesHandler.ShowScreenshotNotification(
+                                messagesHandler?.ShowScreenshotNotification(
                                     gameTitle, savedPath, true, GetProcessFileName(processId));
                             }
                             catch (Exception ex)
                             {
-                                logger.Error(ex, "Failed to show notification for auto screenshot");
+                                logger.Error(ex, "Auto screenshot notification failed");
                             }
                         }
-                    });
+                    }, token);
                 }
-
-                logger.Info($"Capture loop ended for '{gameTitle}'");
             }
-            catch (Exception e)
-            {
-                logger.Error(e, "Error in CaptureLoop");
-            }
+            catch (OperationCanceledException) { /* expected on game stop */ }
+            catch (Exception ex) { logger.Error(ex, "Error in CaptureLoop"); }
+            finally { logger.Info($"Capture loop ended for '{gameTitle}'"); }
         }
 
         // 👇 检查是否允许自动截图
@@ -466,7 +448,14 @@ namespace SharpMemories
         // 修改：返回保存的文件路径
         private string CaptureOnce(int processId, string gameTitle, bool isAutoCapture)
         {
+            lock (screenshotSaveLock)
+                return CaptureOnceCore(processId, gameTitle, isAutoCapture);
+        }
+
+        private string CaptureOnceCore(int processId, string gameTitle, bool isAutoCapture)
+        {
             string savedPath = null;
+            Bitmap bmp = null;
 
             // 自动截图再次确认黑名单，防止进入截图流程前
             // 黑名单发生变化，或其他调用路径绕过条件检查。
@@ -478,8 +467,6 @@ namespace SharpMemories
             try
             {
                 logger.Debug($"Starting screenshot capture for '{gameTitle}' (PID: {processId})");
-                Bitmap bmp = null;
-
                 if (processId > 0)
                 {
                     try
@@ -574,13 +561,22 @@ namespace SharpMemories
                 if (!string.IsNullOrEmpty(suffix))
                 {
                     // 直接追加用户输入的内容，不做任何修改
-                    result = result + suffix;
+                    result = result + FileHelpers.MakeSafeFilename(suffix);
                 }
 
-                var filename = Path.Combine(outFolder, result + ".png");
-
-                bmp.Save(filename, System.Drawing.Imaging.ImageFormat.Png);
-                bmp.Dispose();
+                // CreateNew prevents overwriting existing screenshots or racing with other apps.
+                var filename = FileHelpers.GetAvailablePath(outFolder, result, ".png");
+                try
+                {
+                    using (var stream = new FileStream(filename, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                        bmp.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                }
+                catch
+                {
+                    // Delete only the incomplete file created by this attempt.
+                    try { if (File.Exists(filename)) File.Delete(filename); } catch { }
+                    throw;
+                }
                 savedPath = filename;
                 logger.Info($"Saved screenshot: {filename}");
 
@@ -607,6 +603,10 @@ namespace SharpMemories
                 }
 
                 return null;
+            }
+            finally
+            {
+                bmp?.Dispose();
             }
         }
     }

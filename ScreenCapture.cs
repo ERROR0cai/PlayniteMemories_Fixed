@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -430,14 +430,18 @@ namespace SharpMemories
                 if (hdcSrc == IntPtr.Zero) return null;
 
                 hdcDest = CreateCompatibleDC(hdcSrc);
+                if (hdcDest == IntPtr.Zero) return null;
                 hBitmap = CreateCompatibleBitmap(hdcSrc, rect.Width, rect.Height);
+                if (hBitmap == IntPtr.Zero) return null;
                 hOld = SelectObject(hdcDest, hBitmap);
 
                 bool success = PrintWindow(hWnd, hdcDest, flags);
                 if (!success) return null;
 
-                var img = Image.FromHbitmap(hBitmap);
-                return new Bitmap(img);
+                using (var img = Image.FromHbitmap(hBitmap))
+                {
+                    return new Bitmap(img);
+                }
             }
             catch
             {
@@ -471,14 +475,18 @@ namespace SharpMemories
                 if (rect.Width <= 0 || rect.Height <= 0) return null;
 
                 hdcDest = CreateCompatibleDC(hdcSrc);
+                if (hdcDest == IntPtr.Zero) return null;
                 hBitmap = CreateCompatibleBitmap(hdcSrc, rect.Width, rect.Height);
+                if (hBitmap == IntPtr.Zero) return null;
                 hOld = SelectObject(hdcDest, hBitmap);
 
                 var success = BitBlt(hdcDest, 0, 0, rect.Width, rect.Height, hdcSrc, 0, 0, SRCCOPY);
                 if (!success) return null;
 
-                var img = Image.FromHbitmap(hBitmap);
-                return new Bitmap(img);
+                using (var img = Image.FromHbitmap(hBitmap))
+                {
+                    return new Bitmap(img);
+                }
             }
             catch
             {

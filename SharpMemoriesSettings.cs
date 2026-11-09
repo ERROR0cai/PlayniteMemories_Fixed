@@ -433,7 +433,11 @@ namespace SharpMemories
             get => settings;
             set
             {
+                if (settings != null)
+                    settings.PropertyChanged -= SettingsPropertyChanged;
                 settings = value;
+                if (settings != null)
+                    settings.PropertyChanged += SettingsPropertyChanged;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HotkeyDisplayString));
                 OnPropertyChanged(nameof(IsTestMode));
@@ -565,14 +569,14 @@ namespace SharpMemories
                 Settings.MonitorFolder = steamFolder ?? string.Empty;
             }
 
-            // 👇 订阅 PropertyChanged 事件，当 IntervalMinutes 变化时更新 IsTestMode
-            Settings.PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(Settings.IntervalMinutes))
-                {
-                    OnPropertyChanged(nameof(IsTestMode));
-                }
-            };
+        }
+
+        private void SettingsPropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(SharpMemoriesSettings.IntervalMinutes))
+                OnPropertyChanged(nameof(IsTestMode));
+            if (e.PropertyName != null && e.PropertyName.StartsWith("Hotkey", StringComparison.Ordinal))
+                OnPropertyChanged(nameof(HotkeyDisplayString));
         }
 
         public void BeginEdit()
@@ -647,6 +651,7 @@ namespace SharpMemories
             Settings.ManualNotificationProcessList = ManualNotificationItems.ToList();
 
             plugin.SavePluginSettings(Settings);
+            plugin.ApplyRuntimeSettings();
         }
 
         public bool VerifySettings(out List<string> errors)

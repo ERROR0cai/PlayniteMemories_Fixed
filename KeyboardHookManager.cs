@@ -1,8 +1,10 @@
-using Playnite.SDK;
+﻿using Playnite.SDK;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Input;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SharpMemories
 {
@@ -50,7 +52,7 @@ namespace SharpMemories
 
             // 👇 新增：重置防抖动状态
             _lastTriggerTime = DateTime.MinValue;
-            _isProcessing = false;
+            // Do not clear a running callback; it may still be writing an image.
 
             if (_hookID == IntPtr.Zero)
             {
@@ -127,22 +129,16 @@ namespace SharpMemories
                         if (canTrigger)
                         {
                             logger.Debug("Hotkey pressed, triggering callback");
-                            try
+                            var callback = _hotkeyCallback;
+                            Task.Run(() =>
                             {
-                                _hotkeyCallback?.Invoke();
-                            }
-                            catch (Exception e)
-                            {
-                                logger.Error(e, "Error in hotkey callback");
-                            }
-                            finally
-                            {
-                                // 👇 新增：处理完成后释放锁
-                                lock (this)
+                                try { callback?.Invoke(); }
+                                catch (Exception ex) { logger.Error(ex, "Error in hotkey callback"); }
+                                finally
                                 {
-                                    _isProcessing = false;
+                                    lock (this) { _isProcessing = false; }
                                 }
-                            }
+                            });
                         }
 
                         if (_suppressKey)

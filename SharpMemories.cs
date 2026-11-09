@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System;
 using System.Windows.Controls;
+using System.Threading;
 
 namespace SharpMemories
 {
@@ -24,6 +25,11 @@ namespace SharpMemories
 
         // 通知处理器
         private MessagesHandler messagesHandler;
+        private readonly object sessionGate = new object();
+        private Game activeGame;
+        private int activeProcessId;
+        private string activeTitle;
+
 
         public override Guid Id { get; } = Guid.Parse("f6e5e286-47b0-4fa9-bc5d-2c17587d215d");
 
@@ -77,6 +83,12 @@ namespace SharpMemories
             {
                 var gameName = args?.Game?.Name ?? "Unknown";
                 logger.Info($"OnGameStarted event received for game: {gameName}");
+                lock (sessionGate)
+                {
+                    activeGame = args?.Game;
+                    activeProcessId = args?.StartedProcessId ?? 0;
+                    activeTitle = gameName;
+                }
 
                 // ============================================================
                 // 1. 自动截图功能 - 由 Enabled CheckBox 控制
@@ -154,6 +166,14 @@ namespace SharpMemories
         {
             var gameName = args?.Game?.Name ?? "Unknown";
             logger.Info($"OnGameStopped event received for game: {gameName}");
+            lock (sessionGate)
+            {
+                if (activeGame != null && args?.Game != null && activeGame.Id != args.Game.Id)
+                    return; // unrelated game stop must not terminate the current session
+                activeGame = null;
+                activeTitle = null;
+                activeProcessId = 0;
+            }
 
             try
             {
@@ -200,6 +220,7 @@ namespace SharpMemories
             try
             {
                 screenshotCapture.StopCapture();
+                folderMonitor?.StopMonitoring();
                 keyboardHook?.Dispose();
                 logger.Info("Cleanup completed successfully");
             }
@@ -212,6 +233,49 @@ namespace SharpMemories
         public override void OnLibraryUpdated(OnLibraryUpdatedEventArgs args)
         {
             // Add code to be executed when library is updated.
+        }
+
+        // Applied only after the settings dialog is saved, never during editing.
+        public void ApplyRuntimeSettings()
+        {
+            Game game;
+            int pid;
+            string title;
+            lock (sessionGate)
+            {
+                game = activeGame;
+                pid = activeProcessId;
+                title = activeTitle;
+            }
+            if (game == null || string.IsNullOrEmpty(title)) return;
+
+            try
+            {
+                var current = settings.Settings;
+                if (current.Enabled)
+                {
+                    if (screenshotCapture.IsRunningFor(pid, title))
+                        screenshotCapture.UpdateInterval();
+                    else
+                        screenshotCapture.StartCaptureForProcess(pid, title);
+                }
+                else screenshotCapture.StopCapture();
+
+                if (current.EnableMonitoring && !string.IsNullOrWhiteSpace(current.MonitorFolder))
+                    folderMonitor.EnsureMonitoring(title);
+                else folderMonitor.StopMonitoring();
+
+                keyboardHook.UnregisterHotkey();
+                if (ShouldEnableHotkeyForGame(game))
+                    keyboardHook.RegisterHotkey(current.HotkeyKey, current.HotkeyCtrl,
+                        current.HotkeyAlt, current.HotkeyShift, current.HotkeySuppressKey,
+                        () => screenshotCapture.CaptureOnDemand(pid, title));
+                logger.Info("Runtime settings applied to active game");
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "Failed to apply runtime settings");
+            }
         }
 
         public override ISettings GetSettings(bool firstRunSettings)

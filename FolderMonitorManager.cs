@@ -1,152 +1,245 @@
 using Playnite.SDK;
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace SharpMemories
 {
-    public class FolderMonitorManager
+    // File events only enqueue complete-format candidates; all disk IO runs off the watcher callback.
+    public sealed class FolderMonitorManager
     {
         private static readonly ILogger logger = LogManager.GetLogger();
-
         private readonly SharpMemoriesSettingsViewModel settings;
-        private FileSystemWatcher fileWatcher;
-        private string currentGameTitle = null;
+        private readonly object gate = new object();
+        private FileSystemWatcher watcher;
+        private CancellationTokenSource cancellation;
+        private Task worker;
+        private string currentGameTitle;
+        private string monitoredFolder;
+        private DateTime startedUtc;
+        private readonly ConcurrentDictionary<string, Candidate> pending =
+            new ConcurrentDictionary<string, Candidate>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, DateTime> completed =
+            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        private sealed class Candidate
+        {
+            public long Size = -1;
+            public DateTime Modified;
+            public int StableChecks;
+            public DateTime RetryAfter;
+            public int Failures;
+        }
 
         public FolderMonitorManager(SharpMemoriesSettingsViewModel settings)
         {
             this.settings = settings;
         }
 
+        private static bool IsScreenshot(string path)
+        {
+            string ext = Path.GetExtension(path);
+            return ext.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+                   ext.Equals(".webp", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public void EnsureMonitoring(string gameTitle)
+        {
+            string path = settings?.Settings?.MonitorFolder;
+            if (string.IsNullOrWhiteSpace(path)) { StopMonitoring(); return; }
+            string full;
+            try { full = Path.GetFullPath(path); }
+            catch (Exception ex) { logger.Error(ex, "Invalid monitor folder"); return; }
+            lock (gate)
+            {
+                if (watcher != null && string.Equals(monitoredFolder, full, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(currentGameTitle, gameTitle, StringComparison.Ordinal)) return;
+            }
+            StartMonitoring(gameTitle);
+        }
+
         public void StartMonitoring(string gameTitle)
         {
-            var monitorFolder = settings?.Settings?.MonitorFolder;
-            if (string.IsNullOrWhiteSpace(monitorFolder))
+            StopMonitoring();
+            var path = settings?.Settings?.MonitorFolder;
+            if (string.IsNullOrWhiteSpace(path)) return;
+            try
             {
-                logger.Debug("Monitor folder is not configured, skipping folder monitoring");
-                return;
+                path = Path.GetFullPath(path);
+                if (!Directory.Exists(path)) { logger.Warn($"Monitor folder missing: {path}"); return; }
+                lock (gate)
+                {
+                    currentGameTitle = gameTitle;
+                    monitoredFolder = path;
+                    startedUtc = DateTime.UtcNow;
+                    pending.Clear();
+                    completed.Clear();
+                    cancellation = new CancellationTokenSource();
+                    watcher = new FileSystemWatcher(path)
+                    {
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime | NotifyFilters.LastWrite,
+                        Filter = "*.*",
+                        IncludeSubdirectories = false,
+                        InternalBufferSize = 32768
+                    };
+                    watcher.Created += OnCreated;
+                    watcher.Renamed += OnRenamed;
+                    watcher.Error += OnError;
+                    watcher.EnableRaisingEvents = true;
+                    var token = cancellation.Token;
+                    worker = Task.Run(() => WorkerLoop(path, gameTitle, startedUtc, token));
+                }
+                logger.Info($"Screenshot monitor started: {path}");
             }
-
-            logger.Info($"Starting folder monitor for: {monitorFolder}");
-
-            if (fileWatcher != null)
-            {
-                logger.Debug("Disposing existing file watcher before creating new one");
-                fileWatcher.Dispose();
-            }
-
-            currentGameTitle = gameTitle;
-
-            fileWatcher = new FileSystemWatcher(monitorFolder)
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-                Filter = "*.*", // Monitor all files
-                EnableRaisingEvents = true
-            };
-
-            fileWatcher.Created += OnNewScreenshot;
-            logger.Debug("File watcher created and event handler attached");
+            catch (Exception ex) { logger.Error(ex, "Failed to start screenshot monitor"); StopMonitoring(); }
         }
 
         public void StopMonitoring()
         {
-            if (fileWatcher != null)
+            FileSystemWatcher oldWatcher;
+            CancellationTokenSource oldToken;
+            Task oldWorker;
+            lock (gate)
             {
-                logger.Info("Stopping folder monitor");
-                fileWatcher.EnableRaisingEvents = false;
-                fileWatcher.Dispose();
-                fileWatcher = null;
-                logger.Debug("File watcher disposed");
+                oldWatcher = watcher;
+                watcher = null;
+                oldToken = cancellation;
+                cancellation = null;
+                oldWorker = worker;
+                worker = null;
+                currentGameTitle = null;
+                monitoredFolder = null;
+                if (oldWatcher != null) oldWatcher.EnableRaisingEvents = false;
+                if (oldToken != null) oldToken.Cancel();
             }
-            else
+            if (oldWatcher != null)
             {
-                logger.Debug("No active file watcher to stop");
+                oldWatcher.Created -= OnCreated;
+                oldWatcher.Renamed -= OnRenamed;
+                oldWatcher.Error -= OnError;
+                oldWatcher.Dispose();
             }
-
-            currentGameTitle = null;
+            if (oldToken != null)
+            {
+                if (oldWorker != null)
+                    oldWorker.ContinueWith(_ => oldToken.Dispose(), TaskScheduler.Default);
+                else oldToken.Dispose();
+            }
         }
 
-        private void OnNewScreenshot(object sender, FileSystemEventArgs e)
+        private void OnCreated(object sender, FileSystemEventArgs e) { Enqueue(e.FullPath); }
+        private void OnRenamed(object sender, RenamedEventArgs e) { Enqueue(e.FullPath); }
+        private void OnError(object sender, ErrorEventArgs e)
+        {
+            logger.Error(e.GetException(), "Folder monitor watcher error (polling remains active)");
+        }
+
+        private void Enqueue(string path)
+        {
+            if (!IsScreenshot(path) || completed.ContainsKey(path)) return;
+            pending.TryAdd(path, new Candidate());
+        }
+
+        private async Task WorkerLoop(string folder, string gameTitle, DateTime start, CancellationToken token)
         {
             try
             {
-                logger.Debug($"New file detected in monitor folder: {e.FullPath}");
-
-                if (string.IsNullOrWhiteSpace(currentGameTitle))
+                DateTime nextScan = DateTime.MinValue;
+                while (!token.IsCancellationRequested)
                 {
-                    logger.Warn("No game is currently open. Ignoring new file.");
-                    return;
-                }
-
-                var outFolder = settings?.Settings?.OutputFolder;
-                if (string.IsNullOrWhiteSpace(outFolder))
-                {
-                    outFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Playnite", "Plugins", "SharpMemories", "Screenshots");
-                    logger.Debug($"Using default output folder: {outFolder}");
-                }
-
-                var safeTitle = FileHelpers.MakeSafeFilename(currentGameTitle);
-                var gameFolder = Path.Combine(outFolder, safeTitle);
-
-                try { Directory.CreateDirectory(gameFolder); } catch (Exception ex) { logger.Error(ex, "Failed to create game folder"); }
-
-                var destinationPath = Path.Combine(gameFolder, Path.GetFileName(e.FullPath));
-
-                // Wait for file to become available before attempting to move it
-                if (!WaitForFileAccess(e.FullPath, maxWaitSeconds: 10))
-                {
-                    logger.Error($"Timeout waiting for file access: {e.FullPath}");
-                    return;
-                }
-
-                File.Move(e.FullPath, destinationPath);
-
-                logger.Info($"Moved file '{e.FullPath}' to '{destinationPath}'");
-            }
-            catch (Exception ex)
-            {
-                logger.Error(ex, $"Error handling new file: {e.FullPath}");
-            }
-        }
-
-        private bool WaitForFileAccess(string filePath, int maxWaitSeconds = 10)
-        {
-            var maxAttempts = maxWaitSeconds * 10; // Check every 100ms
-            for (int i = 0; i < maxAttempts; i++)
-            {
-                try
-                {
-                    // Try to open the file exclusively to check if it's accessible
-                    using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    await Task.Delay(700, token);
+                    if (DateTime.UtcNow >= nextScan)
                     {
-                        logger.Debug($"File is now accessible: {filePath} (after {i * 100}ms)");
-                        return true;
+                        nextScan = DateTime.UtcNow.AddSeconds(15);
+                        try
+                        {
+                            foreach (string file in Directory.EnumerateFiles(folder))
+                            {
+                                if (token.IsCancellationRequested) break;
+                                if (!IsScreenshot(file) || completed.ContainsKey(file)) continue;
+                                // Do not automatically move screenshots that were already present
+                                // before monitoring began. Newly renamed files will be enqueued.
+                                if (File.GetLastWriteTimeUtc(file) >= start.AddSeconds(-1)) Enqueue(file);
+                            }
+                        }
+                        catch (Exception ex) { logger.Warn(ex, "Monitor fallback scan failed"); }
                     }
-                }
-                catch (FileNotFoundException)
-                {
-                    logger.Warn($"File no longer exists: {filePath}");
-                    return false;
-                }
-                catch (IOException)
-                {
-                    // File is still locked, wait and retry
-                    if (i == 0)
+                    foreach (var entry in pending.ToArray())
                     {
-                        logger.Debug($"File is locked, waiting for access: {filePath}");
+                        if (token.IsCancellationRequested) break;
+                        var file = entry.Key;
+                        var state = entry.Value;
+                        if (DateTime.UtcNow < state.RetryAfter) continue;
+                        if (!File.Exists(file)) { Candidate removed; pending.TryRemove(file, out removed); continue; }
+                        try
+                        {
+                            var info = new FileInfo(file);
+                            info.Refresh();
+                            if (info.Length <= 0) continue;
+                            if (state.Size != info.Length || state.Modified != info.LastWriteTimeUtc)
+                            {
+                                state.Size = info.Length;
+                                state.Modified = info.LastWriteTimeUtc;
+                                state.StableChecks = 0;
+                                continue;
+                            }
+                            if (++state.StableChecks < 2) continue;
+                            if (token.IsCancellationRequested) break;
+                            using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None)) { }
+                            string output = settings?.Settings?.OutputFolder;
+                            if (string.IsNullOrWhiteSpace(output))
+                                output = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                                    "Playnite", "Plugins", "SharpMemories", "Screenshots");
+                            string destination = Path.Combine(output, FileHelpers.MakeSafeFilename(gameTitle));
+                            // Avoid moving a file onto itself when input/output folders coincide.
+                            if (string.Equals(Path.GetFullPath(destination).TrimEnd('\\'),
+                                Path.GetFullPath(folder).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                            {
+                                logger.Warn("Monitor source equals destination; skipping file move");
+                                completed[file] = DateTime.UtcNow;
+                                Candidate unused; pending.TryRemove(file, out unused);
+                                continue;
+                            }
+                            Directory.CreateDirectory(destination);
+                            var baseName = Path.GetFileNameWithoutExtension(file);
+                            var ext = Path.GetExtension(file);
+                            var target = FileHelpers.GetAvailablePath(destination, baseName, ext);
+                            File.Move(file, target);
+                            logger.Info($"Monitored screenshot moved: {file} -> {target}");
+                            completed[file] = DateTime.UtcNow;
+                            Candidate removed; pending.TryRemove(file, out removed);
+                        }
+                        catch (IOException ex)
+                        {
+                            state.Failures++;
+                            state.RetryAfter = DateTime.UtcNow.AddSeconds(Math.Min(60, 2 * state.Failures));
+                            if (state.Failures == 3 || state.Failures % 15 == 0) logger.Warn(ex, $"Screenshot move retry: {file}");
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            state.Failures++;
+                            state.RetryAfter = DateTime.UtcNow.AddSeconds(60);
+                            if (state.Failures == 1 || state.Failures % 15 == 0) logger.Warn(ex, $"Screenshot move access denied: {file}");
+                        }
+                        catch (Exception ex)
+                        {
+                            state.RetryAfter = DateTime.UtcNow.AddMinutes(1);
+                            logger.Error(ex, $"Screenshot monitor processing failed: {file}");
+                        }
                     }
-                    Thread.Sleep(100);
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    // Permission issue
-                    logger.Error($"Access denied to file: {filePath}");
-                    return false;
+                    foreach (var done in completed.ToArray())
+                        if (DateTime.UtcNow - done.Value > TimeSpan.FromMinutes(10))
+                        { DateTime unused; completed.TryRemove(done.Key, out unused); }
                 }
             }
-
-            logger.Warn($"Timeout waiting for file access after {maxWaitSeconds} seconds: {filePath}");
-            return false;
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { logger.Error(ex, "Screenshot monitor worker stopped unexpectedly"); }
         }
     }
 }
