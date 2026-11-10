@@ -106,7 +106,7 @@ namespace SharpMemories
 
                         var title = args?.Game?.Name ?? "unknown";
                         logger.Info($"Starting capture loop for '{title}' (pid={pid})");
-                        screenshotCapture.StartCaptureForProcess(pid, title);
+                        screenshotCapture.StartCaptureForProcess(pid, title, args?.Game?.InstallDirectory);
                     }
                     else
                     {
@@ -257,7 +257,7 @@ namespace SharpMemories
                     if (screenshotCapture.IsRunningFor(pid, title))
                         screenshotCapture.UpdateInterval();
                     else
-                        screenshotCapture.StartCaptureForProcess(pid, title);
+                        screenshotCapture.StartCaptureForProcess(pid, title, game?.InstallDirectory);
                 }
                 else screenshotCapture.StopCapture();
 
@@ -276,6 +276,18 @@ namespace SharpMemories
             {
                 logger.Error(ex, "Failed to apply runtime settings");
             }
+        }
+
+        // Invoked only after explicit confirmation in the advanced settings UI.
+        // Works even when no game is currently running.
+        public string GenerateDiagnosticErrorPlaceholder()
+        {
+            string gameTitle;
+            lock (sessionGate)
+                gameTitle = activeTitle;
+            if (string.IsNullOrWhiteSpace(gameTitle))
+                gameTitle = "SharpMemories-Diagnostics";
+            return screenshotCapture.CreateDiagnosticErrorPlaceholder(gameTitle);
         }
 
         public override ISettings GetSettings(bool firstRunSettings)

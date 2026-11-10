@@ -11,6 +11,82 @@ namespace SharpMemories
         public SharpMemoriesSettingsView()
         {
             InitializeComponent();
+            InstallAdvancedDiagnosticsPanel();
+        }
+
+        // Installed in code-behind so no unprovided XAML file needs modification.
+        // A collapsed, bottom-docked section keeps the destructive-looking test
+        // out of the normal settings workflow. The action requires confirmation.
+        private void InstallAdvancedDiagnosticsPanel()
+        {
+            var originalContent = Content as System.Windows.UIElement;
+            if (originalContent == null) return;
+
+            Content = null;
+            var dock = new System.Windows.Controls.DockPanel { LastChildFill = true };
+            var advanced = new System.Windows.Controls.Expander
+            {
+                Header = "高级诊断（一般无需操作）",
+                IsExpanded = false,
+                Margin = new Thickness(8, 4, 8, 4)
+            };
+            var panel = new System.Windows.Controls.StackPanel
+            {
+                Margin = new Thickness(8, 6, 8, 8)
+            };
+            panel.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = "仅用于测试截图失败占位图；会在截图目录创建一张黑底白字 ERROR 图片，不改变截图计时。",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            var diagnosticButton = new System.Windows.Controls.Button
+            {
+                Content = "生成 ERROR 测试图片…",
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                Padding = new Thickness(12, 5, 12, 5)
+            };
+            diagnosticButton.Click += GenerateErrorPlaceholder_Click;
+            panel.Children.Add(diagnosticButton);
+            advanced.Content = panel;
+            System.Windows.Controls.DockPanel.SetDock(advanced, System.Windows.Controls.Dock.Bottom);
+            dock.Children.Add(advanced);
+            dock.Children.Add(originalContent);
+            Content = dock;
+        }
+
+        private void GenerateErrorPlaceholder_Click(object sender, RoutedEventArgs e)
+        {
+            var answer = System.Windows.MessageBox.Show(
+                "此操作会在截图目录生成一张黑底白字的 ERROR 测试图，并触发错误提示（如果可用）。\n\n不会真正截取游戏画面，也不会改变自动截图倒计时。\n\n确定继续？",
+                "SharpMemories - 高级诊断确认",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) return;
+
+            try
+            {
+                var vm = DataContext as SharpMemoriesSettingsViewModel;
+                if (vm == null)
+                {
+                    System.Windows.MessageBox.Show("当前设置界面尚未绑定配置对象。", "SharpMemories");
+                    return;
+                }
+                string path = vm.GenerateDiagnosticErrorPlaceholder();
+                System.Windows.MessageBox.Show(
+                    string.IsNullOrWhiteSpace(path)
+                        ? "创建失败，请查看 Playnite 扩展日志（extensions.log）。"
+                        : "已生成 ERROR 测试图片：\n" + path,
+                    "SharpMemories - 诊断结果",
+                    MessageBoxButton.OK,
+                    string.IsNullOrWhiteSpace(path) ? MessageBoxImage.Error : MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show("生成失败：" + ex.Message,
+                    "SharpMemories - 诊断错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void RecordHotkey_Click(object sender, RoutedEventArgs e)

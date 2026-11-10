@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -96,262 +96,186 @@ namespace SharpMemories
         private const uint PW_RENDERFULLCONTENT = 0x00000002;
         private const uint PW_CLIENTONLY = 0x00000001;
 
-        /// <summary>
-        /// 检测电脑是否处于锁屏状态
-        /// </summary>
-        public static bool IsScreenLocked()
+        // Screen and session state: no window-title guessing. Lock detection
+        // checks the desktop actually receiving user input; display power is
+        // tracked through Windows power-setting broadcasts.
+        private const int UOI_NAME = 2;
+        private const uint DESKTOP_READOBJECTS = 0x0001;
+        private const int SPI_GETSCREENSAVERRUNNING = 0x0072;
+        private static readonly object monitorGate = new object();
+        private static DisplayStateListener displayListener;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint desiredAccess);
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseDesktop(IntPtr desktop);
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetUserObjectInformation(IntPtr obj, int index,
+            System.Text.StringBuilder buffer, int length, out int needed);
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SystemParametersInfo(uint action, uint param,
+            out int value, uint update);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr RegisterPowerSettingNotification(IntPtr recipient,
+            ref Guid setting, uint flags);
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UnregisterPowerSettingNotification(IntPtr handle);
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        private const int WM_POWERBROADCAST = 0x0218;
+        private const int PBT_POWERSETTINGCHANGE = 0x8013;
+        private const uint DEVICE_NOTIFY_WINDOW_HANDLE = 0;
+        private const uint WM_CLOSE = 0x0010;
+        private static readonly Guid GUID_CONSOLE_DISPLAY_STATE =
+            new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PowerBroadcastSetting
         {
-            try
+            public Guid PowerSetting;
+            public uint DataLength;
+            public uint Data;
+        }
+
+        private sealed class DisplayStateListener : System.Windows.Forms.NativeWindow
+        {
+            private readonly System.Threading.ManualResetEventSlim ready =
+                new System.Threading.ManualResetEventSlim(false);
+            private readonly System.Threading.Thread thread;
+            private IntPtr notification;
+            private volatile int displayState = -1; // -1 unknown, 0 off, 1 on, 2 dim
+            public int State => displayState;
+            public DisplayStateListener()
             {
-                logger.Debug($"🔍 IsScreenLocked() - Checking lock screen status...");
-                string title = string.Empty;
-                IntPtr foreground = IntPtr.Zero;
-
-                // 方法1：检测锁屏窗口是否存在
-                IntPtr lockScreenHwnd = FindWindow("LockScreen", null);
-                bool lockScreenExists = lockScreenHwnd != IntPtr.Zero && IsWindowVisible(lockScreenHwnd);
-                logger.Debug($"   ├─ LockScreen window exists: {lockScreenExists} (Handle: {lockScreenHwnd})");
-
-                if (lockScreenExists)
-                {
-                    logger.Debug($"   └─ ✅ Lock screen detected via LockScreen window");
-                    return true;
-                }
-
-                // 方法2：检测 LogonUI 进程窗口
-                IntPtr logonHwnd = FindWindow("LogonUI", null);
-                bool logonExists = logonHwnd != IntPtr.Zero && IsWindowVisible(logonHwnd);
-                logger.Debug($"   ├─ LogonUI window exists: {logonExists} (Handle: {logonHwnd})");
-
-                if (logonExists)
-                {
-                    logger.Debug($"   └─ ✅ Lock screen detected via LogonUI window");
-                    return true;
-                }
-
-                // 方法3：检测 "Windows 默认锁屏界面" (Win11 中文锁屏)
-                IntPtr defaultLockHwnd = FindWindow("Windows.UI.Core.CoreWindow", null);
-                if (defaultLockHwnd != IntPtr.Zero)
-                {
-                    var sb = new System.Text.StringBuilder(256);
-                    GetWindowText(defaultLockHwnd, sb, sb.Capacity);
-                    string windowTitle = sb.ToString();
-                    if (!string.IsNullOrEmpty(windowTitle) && (windowTitle.Contains("锁屏") || windowTitle.Contains("Lock")))
-                    {
-                        logger.Debug($"   └─ ✅ Lock screen detected via Windows.UI.Core.CoreWindow: '{windowTitle}'");
-                        return true;
-                    }
-                }
-
-                // 方法4：检查前台窗口是否为锁屏相关
-                foreground = GetForegroundWindow();
-                logger.Debug($"   ├─ Foreground window handle: {foreground}");
-
-                if (foreground != IntPtr.Zero)
-                {
-                    var sb = new System.Text.StringBuilder(256);
-                    GetWindowText(foreground, sb, sb.Capacity);
-                    title = sb.ToString();
-                    string titleLower = title.ToLowerInvariant();
-                    logger.Debug($"   ├─ Foreground window title: '{title}'");
-
-                    // 检测常见的锁屏窗口标题（中英文完整列表）
-                    bool isLockTitle =
-                        // 英文
-                        titleLower.Contains("lock") ||
-                        titleLower.Contains("logon") ||
-                        titleLower.Contains("welcome") ||
-                        titleLower.Contains("credential") ||
-                        titleLower.Contains("sign in") ||
-                        titleLower.Contains("sign-in") ||
-                        // 中文
-                        title.Contains("默认锁屏") ||
-                        title.Contains("锁屏界面") ||
-                        title.Contains("锁屏") ||
-                        title.Contains("登录") ||
-                        title.Contains("登入") ||
-                        title.Contains("账户") ||
-                        // 其他常见锁屏相关
-                        titleLower.Contains("screen saver") ||
-                        titleLower.Contains("unlock");
-
-                    if (isLockTitle)
-                    {
-                        logger.Debug($"   └─ ✅ Lock screen detected via window title: '{title}'");
-                        return true;
-                    }
-                }
-
-                // 方法5：检查是否有全屏覆盖窗口（锁屏/登录界面）
+                thread = new System.Threading.Thread(Run)
+                { IsBackground = true, Name = "SharpMemories.DisplayPower" };
+                thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                thread.Start();
+                if (!ready.Wait(3000)) logger.Warn("Display monitor startup timed out");
+            }
+            private void Run()
+            {
                 try
                 {
-                    if (foreground != IntPtr.Zero)
+                    var parameters = new System.Windows.Forms.CreateParams
+                    { Caption = "SharpMemories.PowerMonitor", Parent = new IntPtr(-3) };
+                    CreateHandle(parameters);
+                    Guid guid = GUID_CONSOLE_DISPLAY_STATE;
+                    notification = RegisterPowerSettingNotification(Handle, ref guid,
+                        DEVICE_NOTIFY_WINDOW_HANDLE);
+                    if (notification == IntPtr.Zero)
+                        logger.Warn("Display power notification registration failed");
+                    ready.Set();
+                    System.Windows.Forms.Application.Run();
+                }
+                catch (Exception ex) { logger.Warn(ex, "Display monitor failed"); ready.Set(); }
+                finally
+                {
+                    if (notification != IntPtr.Zero) UnregisterPowerSettingNotification(notification);
+                    if (Handle != IntPtr.Zero) DestroyHandle();
+                }
+            }
+            protected override void WndProc(ref System.Windows.Forms.Message m)
+            {
+                if (m.Msg == WM_POWERBROADCAST && m.WParam.ToInt64() == PBT_POWERSETTINGCHANGE &&
+                    m.LParam != IntPtr.Zero)
+                {
+                    try
                     {
-                        IntPtr desktopHwnd = GetDesktopWindow();
-                        if (foreground != desktopHwnd)
+                        var update = (PowerBroadcastSetting)Marshal.PtrToStructure(m.LParam,
+                            typeof(PowerBroadcastSetting));
+                        if (update.PowerSetting == GUID_CONSOLE_DISPLAY_STATE &&
+                            update.DataLength >= sizeof(uint) && update.Data <= 2)
                         {
-                            RECT foregroundRect;
-                            if (GetWindowRect(foreground, out foregroundRect))
-                            {
-                                int screenWidth = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
-                                int screenHeight = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
-                                int fgWidth = foregroundRect.Right - foregroundRect.Left;
-                                int fgHeight = foregroundRect.Bottom - foregroundRect.Top;
-
-                                // 如果前台窗口几乎覆盖整个屏幕，且不是桌面，可能是锁屏
-                                if (fgWidth >= screenWidth * 0.9 && fgHeight >= screenHeight * 0.9)
-                                {
-                                    var className = GetWindowClassName(foreground);
-                                    logger.Debug($"   ├─ Foreground window class: '{className}'");
-
-                                    if (!string.IsNullOrEmpty(className) &&
-                                        (className.Contains("Lock") ||
-                                        className.Contains("Logon") ||
-                                        className.Contains("Credential") ||
-                                        className.Contains("Fullscreen")))
-                                    {
-                                        logger.Debug($"   └─ ✅ Lock screen detected via full-screen window (class: {className})");
-                                        return true;
-                                    }
-
-                                    if (title.Contains("默认锁屏") || title.Contains("锁屏"))
-                                    {
-                                        logger.Debug($"   └─ ✅ Lock screen detected via full-screen window with lock title");
-                                        return true;
-                                    }
-                                }
-                            }
+                            displayState = (int)update.Data;
+                            logger.Info($"Display power state changed: {displayState}");
                         }
                     }
+                    catch (Exception ex) { logger.Warn(ex, "Display state message failed"); }
                 }
-                catch (Exception ex)
+                if (m.Msg == WM_CLOSE)
                 {
-                    logger.Debug($"   ├─ Full-screen check failed: {ex.Message}");
+                    System.Windows.Forms.Application.ExitThread();
+                    return;
                 }
-
-                logger.Debug($"   └─ ❌ No lock screen detected");
-                return false;
+                base.WndProc(ref m);
             }
-            catch (Exception ex)
+            public void Stop()
             {
-                logger.Error($"IsScreenLocked() exception: {ex.Message}");
-                return false;
+                if (Handle != IntPtr.Zero) PostMessage(Handle, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
             }
         }
 
-        /// <summary>
-        /// 检测系统是否处于息屏/睡眠状态
-        /// </summary>
-        public static bool IsScreenSaverOrSleeping()
+        public static void StartSystemStateMonitor()
         {
+            lock (monitorGate)
+                if (displayListener == null) displayListener = new DisplayStateListener();
+        }
+
+        public static void StopSystemStateMonitor()
+        {
+            lock (monitorGate)
+            {
+                var old = displayListener;
+                displayListener = null;
+                old?.Stop();
+            }
+        }
+
+        public static bool IsScreenLocked()
+        {
+            IntPtr desktop = IntPtr.Zero;
             try
             {
-                logger.Debug($"🔍 IsScreenSaverOrSleeping() - Checking screen saver/sleep status...");
-
-                // 检查屏保是否运行
-                IntPtr screenSaverHwnd = FindWindow("WindowsScreenSaverClass", null);
-                bool screenSaverExists = screenSaverHwnd != IntPtr.Zero && IsWindowVisible(screenSaverHwnd);
-                logger.Debug($"   ├─ Screen saver window exists: {screenSaverExists} (Handle: {screenSaverHwnd})");
-
-                if (screenSaverExists)
+                desktop = OpenInputDesktop(0, false, DESKTOP_READOBJECTS);
+                if (desktop == IntPtr.Zero)
                 {
-                    logger.Debug($"   └─ ✅ Screen saver detected");
+                    logger.Debug("Input desktop inaccessible; pausing capture for safety");
                     return true;
                 }
-
-                // 检查锁屏窗口是否存在
-                IntPtr lockScreenHwnd = FindWindow("LockScreen", null);
-                if (lockScreenHwnd != IntPtr.Zero && IsWindowVisible(lockScreenHwnd))
+                var name = new System.Text.StringBuilder(256);
+                int needed;
+                if (!GetUserObjectInformation(desktop, UOI_NAME, name,
+                    name.Capacity * sizeof(char), out needed))
                 {
-                    logger.Debug($"   └─ ✅ Lock screen detected in sleep check");
+                    logger.Debug("Input desktop name unavailable; pausing capture for safety");
                     return true;
                 }
-
-                // 检查前台窗口是否存在
-                IntPtr foreground = GetForegroundWindow();
-                logger.Debug($"   ├─ Foreground window handle: {foreground}");
-
-                if (foreground == IntPtr.Zero)
-                {
-                    logger.Debug($"   └─ ✅ No foreground window - system may be sleeping");
-                    return true;
-                }
-
-                // 检查前台窗口是否可见
-                bool isVisible = IsWindowVisible(foreground);
-                logger.Debug($"   ├─ Foreground window visible: {isVisible}");
-
-                if (!isVisible)
-                {
-                    logger.Debug($"   └─ ✅ Foreground window not visible - system may be sleeping");
-                    return true;
-                }
-
-                // 检查桌面窗口是否可见
-                IntPtr desktopHwnd = GetDesktopWindow();
-                bool desktopVisible = IsWindowVisible(desktopHwnd);
-                logger.Debug($"   ├─ Desktop window visible: {desktopVisible}");
-
-                // 检查是否处于登出/切换用户状态
-                IntPtr switchUserHwnd = FindWindow("SwitchUser", null);
-                bool switchUserExists = switchUserHwnd != IntPtr.Zero && IsWindowVisible(switchUserHwnd);
-                logger.Debug($"   ├─ SwitchUser window exists: {switchUserExists}");
-
-                if (switchUserExists)
-                {
-                    logger.Debug($"   └─ ✅ Switch user screen detected");
-                    return true;
-                }
-
-                // 检查前台窗口标题是否包含锁屏关键词
-                if (foreground != IntPtr.Zero)
-                {
-                    var sb = new System.Text.StringBuilder(256);
-                    GetWindowText(foreground, sb, sb.Capacity);
-                    string title = sb.ToString();
-                    string titleLower = title.ToLowerInvariant();
-                    logger.Debug($"   ├─ Foreground window title: '{title}'");
-
-                    if (title.Contains("默认锁屏") ||
-                        title.Contains("锁屏") ||
-                        title.Contains("登录") ||
-                        titleLower.Contains("lock") ||
-                        titleLower.Contains("logon") ||
-                        titleLower.Contains("credential") ||
-                        titleLower.Contains("sign in"))
-                    {
-                        logger.Debug($"   └─ ✅ Lock screen detected via title in sleep check");
-                        return true;
-                    }
-                }
-
-                logger.Debug($"   └─ ❌ No screen saver or sleep detected");
-                return false;
+                return !string.Equals(name.ToString(), "Default", StringComparison.OrdinalIgnoreCase);
             }
             catch (Exception ex)
             {
-                logger.Error($"IsScreenSaverOrSleeping() exception: {ex.Message}");
-                return false;
+                logger.Warn(ex, "Input desktop check failed");
+                return true;
             }
+            finally { if (desktop != IntPtr.Zero) CloseDesktop(desktop); }
         }
 
-        /// <summary>
-        /// 检测是否可以截图（未锁屏、未息屏）
-        /// </summary>
+        public static bool IsScreenSaverOrSleeping()
+        {
+            int running;
+            if (!SystemParametersInfo(SPI_GETSCREENSAVERRUNNING, 0, out running, 0))
+            {
+                logger.Debug("Screen saver status unavailable; pausing capture for safety");
+                return true;
+            }
+            if (running != 0) return true;
+            lock (monitorGate)
+                return displayListener != null && displayListener.State == 0;
+        }
+
         public static bool CanTakeScreenshot()
         {
-            logger.Debug($"🔍 CanTakeScreenshot() - Starting check...");
-
-            bool isLocked = IsScreenLocked();
-            bool isSleeping = IsScreenSaverOrSleeping();
-
-            logger.Debug($"   ├─ IsScreenLocked: {isLocked}");
-            logger.Debug($"   ├─ IsScreenSaverOrSleeping: {isSleeping}");
-
-            bool canTake = !isLocked && !isSleeping;
-            logger.Debug($"   └─ CanTakeScreenshot: {canTake}");
-
-            return canTake;
+            bool locked = IsScreenLocked();
+            bool unavailable = IsScreenSaverOrSleeping();
+            logger.Debug($"System capture status: locked={locked}, screenOffOrSaver={unavailable}");
+            return !locked && !unavailable;
         }
 
         /// <summary>
@@ -376,8 +300,22 @@ namespace SharpMemories
         /// </summary>
         private static bool IsValidScreenshot(Bitmap bitmap)
         {
-            if (bitmap == null) return false;
-            return true;
+            if (bitmap == null || bitmap.Width < 2 || bitmap.Height < 2) return false;
+            // PrintWindow can succeed but return a solid black/white frame for
+            // some Direct3D games. Such frames are treated as capture failures.
+            // Sampling keeps this check cheap even for 4K screenshots.
+            try
+            {
+                int first = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2).ToArgb();
+                bool uniform = true;
+                for (int y = 1; y <= 7 && uniform; y++)
+                    for (int x = 1; x <= 7; x++)
+                        if (bitmap.GetPixel(x * (bitmap.Width - 1) / 8,
+                                y * (bitmap.Height - 1) / 8).ToArgb() != first)
+                        { uniform = false; break; }
+                return !uniform;
+            }
+            catch { return false; }
         }
 
         public static Bitmap CaptureScreen()
@@ -389,7 +327,7 @@ namespace SharpMemories
         /// <summary>
         /// Captures a window using multiple methods with fallback logic
         /// </summary>
-        public static Bitmap CaptureWindow(IntPtr hWnd)
+        public static Bitmap CaptureWindow(IntPtr hWnd, bool allowBitBlt = true)
         {
             Bitmap result = null;
 
@@ -403,10 +341,13 @@ namespace SharpMemories
                 return result;
             result?.Dispose();
 
-            result = CaptureWithBitBlt(hWnd);
-            if (IsValidScreenshot(result))
-                return result;
-            result?.Dispose();
+            // BitBlt of a covered/background window may include another app.
+            if (allowBitBlt)
+            {
+                result = CaptureWithBitBlt(hWnd);
+                if (IsValidScreenshot(result)) return result;
+                result?.Dispose();
+            }
 
             return null;
         }

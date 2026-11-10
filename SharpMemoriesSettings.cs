@@ -552,6 +552,12 @@ namespace SharpMemories
         /// </summary>
         public bool IsTestMode => Settings?.IntervalMinutes == 0;
 
+        // An explicit diagnostic action; no persistent switch is introduced.
+        public string GenerateDiagnosticErrorPlaceholder()
+        {
+            return plugin.GenerateDiagnosticErrorPlaceholder();
+        }
+
         public SharpMemoriesSettingsViewModel(SharpMemories plugin)
         {
             this.plugin = plugin;
