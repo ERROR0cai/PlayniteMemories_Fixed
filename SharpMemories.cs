@@ -1,4 +1,4 @@
-﻿using Playnite.SDK;
+using Playnite.SDK;
 using Playnite.SDK.Events;
 using Playnite.SDK.Plugins;
 using Playnite.SDK.Models;
@@ -7,6 +7,8 @@ using System.Reflection;
 using System;
 using System.Windows.Controls;
 using System.Threading;
+using System.IO;
+using System.Collections.Generic;
 
 namespace SharpMemories
 {
@@ -27,6 +29,7 @@ namespace SharpMemories
         private MessagesHandler messagesHandler;
         private readonly object sessionGate = new object();
         private Game activeGame;
+        private GameAction activeSourceAction;
         private int activeProcessId;
         private string activeTitle;
 
@@ -39,6 +42,7 @@ namespace SharpMemories
         public SharpMemories(IPlayniteAPI api) : base(api)
         {
             logger.Info("SharpMemories plugin initialized");
+            GameFingerprintStore.Initialize(GetPluginUserDataPath());
             settings = new SharpMemoriesSettingsViewModel(this);
 
             // 初始化 MessagesHandler
@@ -77,6 +81,60 @@ namespace SharpMemories
             // Add code to be executed when game is finished installing.
         }
 
+
+        // PlayState-style detection hints: the source launch action is often more
+        // accurate than Game.InstallDirectory (e.g. relocated Java games).
+        private List<string> GetGameProcessDirectories(Game game, GameAction sourceAction)
+        {
+            var directories = new List<string>();
+            Action<string> addDirectory = value =>
+            {
+                if (string.IsNullOrWhiteSpace(value)) return;
+                try
+                {
+                    string candidate = Environment.ExpandEnvironmentVariables(value.Trim().Trim('"'));
+                    if (!Path.IsPathRooted(candidate)) return;
+                    candidate = Path.GetFullPath(candidate);
+                    if (File.Exists(candidate) ||
+                        (Path.HasExtension(candidate) && !Directory.Exists(candidate)))
+                        candidate = Path.GetDirectoryName(candidate);
+                    if (!string.IsNullOrWhiteSpace(candidate) &&
+                        !directories.Any(x => string.Equals(x, candidate, StringComparison.OrdinalIgnoreCase)))
+                        directories.Add(candidate);
+                }
+                catch (Exception ex) { logger.Debug($"Game process path hint ignored: {ex.Message}"); }
+            };
+
+            // Prefer the Playnite action actually used for this session.
+            Action<GameAction> addAction = action =>
+            {
+                if (action == null) return;
+                try
+                {
+                    var expanded = PlayniteApi.ExpandGameVariables(game, action);
+                    if (expanded == null) return;
+                    addDirectory(expanded.TrackingPath);
+                    if (!string.IsNullOrWhiteSpace(expanded.Path))
+                    {
+                        string path = expanded.Path;
+                        if (!Path.IsPathRooted(path) && !string.IsNullOrWhiteSpace(expanded.WorkingDir))
+                            path = Path.Combine(expanded.WorkingDir, path);
+                        addDirectory(path);
+                    }
+                    // Avoid accepting the entire parent library as a game directory.
+                    // WorkingDir is only a fallback when neither tracking nor executable
+                    // path yielded a directory for this action.
+                    if (directories.Count == 0) addDirectory(expanded.WorkingDir);
+                }
+                catch (Exception ex) { logger.Debug($"Unable to expand game action for process discovery: {ex.Message}"); }
+            };
+            addAction(sourceAction);
+            // Game has no PlayAction property in the supported Playnite SDK.
+            // The actual session action is supplied through OnGameStarted.SourceAction.
+            addDirectory(game?.InstallDirectory);
+            return directories;
+        }
+
         public override void OnGameStarted(OnGameStartedEventArgs args)
         {
             try
@@ -86,9 +144,14 @@ namespace SharpMemories
                 lock (sessionGate)
                 {
                     activeGame = args?.Game;
+                    activeSourceAction = args?.SourceAction;
                     activeProcessId = args?.StartedProcessId ?? 0;
                     activeTitle = gameName;
                 }
+
+                if (args?.Game != null) GameFingerprintStore.Current?.Ensure(args.Game.Id.ToString(), gameName);
+                var detectionDirectories = GetGameProcessDirectories(args?.Game, args?.SourceAction);
+                string preferredGameDirectory = detectionDirectories.FirstOrDefault() ?? args?.Game?.InstallDirectory;
 
                 // ============================================================
                 // 1. 自动截图功能 - 由 Enabled CheckBox 控制
@@ -106,7 +169,7 @@ namespace SharpMemories
 
                         var title = args?.Game?.Name ?? "unknown";
                         logger.Info($"Starting capture loop for '{title}' (pid={pid})");
-                        screenshotCapture.StartCaptureForProcess(pid, title, args?.Game?.InstallDirectory);
+                        screenshotCapture.StartCaptureForProcess(pid, title, preferredGameDirectory);
                     }
                     else
                     {
@@ -117,6 +180,9 @@ namespace SharpMemories
                 {
                     logger.Info("Auto screenshot is disabled, skipping screenshot capture");
                 }
+
+                screenshotCapture.SetGameDirectories(detectionDirectories);
+                screenshotCapture.SetFingerprintGameId(args?.Game?.Id.ToString());
 
                 // ============================================================
                 // 2. 文件夹监控 - 由 EnableMonitoring 独立控制
@@ -147,7 +213,7 @@ namespace SharpMemories
                         settings.Settings.HotkeyAlt,
                         settings.Settings.HotkeyShift,
                         settings.Settings.HotkeySuppressKey,
-                        () => screenshotCapture.CaptureOnDemand(pid, title)
+                        () => screenshotCapture.CaptureOnDemand(pid, title, preferredGameDirectory)
                     );
                 }
             }
@@ -171,6 +237,7 @@ namespace SharpMemories
                 if (activeGame != null && args?.Game != null && activeGame.Id != args.Game.Id)
                     return; // unrelated game stop must not terminate the current session
                 activeGame = null;
+                activeSourceAction = null;
                 activeTitle = null;
                 activeProcessId = 0;
             }
@@ -239,11 +306,13 @@ namespace SharpMemories
         public void ApplyRuntimeSettings()
         {
             Game game;
+            GameAction sourceAction;
             int pid;
             string title;
             lock (sessionGate)
             {
                 game = activeGame;
+                sourceAction = activeSourceAction;
                 pid = activeProcessId;
                 title = activeTitle;
             }
@@ -252,14 +321,18 @@ namespace SharpMemories
             try
             {
                 var current = settings.Settings;
+                var detectionDirectories = GetGameProcessDirectories(game, sourceAction);
+                string preferredGameDirectory = detectionDirectories.FirstOrDefault() ?? game.InstallDirectory;
                 if (current.Enabled)
                 {
                     if (screenshotCapture.IsRunningFor(pid, title))
                         screenshotCapture.UpdateInterval();
                     else
-                        screenshotCapture.StartCaptureForProcess(pid, title, game?.InstallDirectory);
+                        screenshotCapture.StartCaptureForProcess(pid, title, preferredGameDirectory);
                 }
                 else screenshotCapture.StopCapture();
+                screenshotCapture.SetGameDirectories(detectionDirectories);
+                screenshotCapture.SetFingerprintGameId(game.Id.ToString());
 
                 if (current.EnableMonitoring && !string.IsNullOrWhiteSpace(current.MonitorFolder))
                     folderMonitor.EnsureMonitoring(title);
@@ -269,7 +342,7 @@ namespace SharpMemories
                 if (ShouldEnableHotkeyForGame(game))
                     keyboardHook.RegisterHotkey(current.HotkeyKey, current.HotkeyCtrl,
                         current.HotkeyAlt, current.HotkeyShift, current.HotkeySuppressKey,
-                        () => screenshotCapture.CaptureOnDemand(pid, title));
+                        () => screenshotCapture.CaptureOnDemand(pid, title, preferredGameDirectory));
                 logger.Info("Runtime settings applied to active game");
             }
             catch (Exception ex)

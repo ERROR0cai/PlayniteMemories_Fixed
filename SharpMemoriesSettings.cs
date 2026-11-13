@@ -1,4 +1,4 @@
-﻿﻿using Playnite.SDK;
+﻿using Playnite.SDK;
 using Playnite.SDK.Data;
 using Playnite.SDK.Plugins;
 using System;
@@ -115,6 +115,22 @@ namespace SharpMemories
             if (hotkeyShift) parts.Add("Shift");
             parts.Add(hotkeyKey.ToString());
             return string.Join(" + ", parts);
+        }
+
+        private int processRecheckDelaySeconds = 20;
+        /// <summary>Initial identification is immediate; WMI recheck begins after this delay (0-3600 s).</summary>
+        public int ProcessRecheckDelaySeconds
+        {
+            get => processRecheckDelaySeconds;
+            set => SetValue(ref processRecheckDelaySeconds, Math.Max(0, Math.Min(3600, value)));
+        }
+
+        private bool allowFullScreenCapture = false;
+        /// <summary>Only manual capture may fall back to the entire desktop; disabled by default.</summary>
+        public bool AllowFullScreenCapture
+        {
+            get => allowFullScreenCapture;
+            set => SetValue(ref allowFullScreenCapture, value);
         }
 
         // ========== 截图条件设置 ==========

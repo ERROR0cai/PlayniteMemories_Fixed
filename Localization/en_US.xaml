@@ -1,4 +1,4 @@
-﻿<?xml version="1.0"?>
+<?xml version="1.0"?>
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
@@ -78,4 +78,45 @@
     <!-- Notification process filtering -->
     <sys:String x:Key="LOCSharpMemories_NotificationMode_AutoHint">Filter automatic screenshot success notifications by the Playnite-tracked game process. Screenshots are unaffected.</sys:String>
     <sys:String x:Key="LOCSharpMemories_NotificationMode_ManualHint">Filter manual screenshot success notifications by the foreground process at hotkey time. Screenshots are unaffected.</sys:String>
+    <!-- Process discovery and screenshot fallback -->
+    <sys:String x:Key="LOCSharpMemories_Settings_ProcessRecheckDelay">Process recheck delay (seconds):</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_ProcessRecheckHint">  Check immediately at launch; scan again after delay and retry periodically if needed</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AllowFullScreenCapture">Allow manual screenshot fallback to entire screen (off by default)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_AllowFullScreenCapture">When off, F12 captures only a verified foreground game window. When on, it may capture the entire desktop if the game window cannot be captured. Automatic screenshots never fall back to the entire screen.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Header">Advanced diagnostics (usually not needed)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Description">Test the screenshot failure placeholder by creating a black ERROR image in the screenshot folder. Does not affect the capture timer.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_GenerateButton">Generate ERROR test image...</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Confirmation">This will create a black ERROR test image in the screenshot folder and trigger a failure notification (if available).&#10;&#10;It will not capture gameplay or change the automatic screenshot countdown.&#10;&#10;Continue?</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_ConfirmationTitle">SharpMemories - Confirm diagnostics</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_NoViewModel">The settings view is not bound to a settings model.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Failed">Creation failed. Check the Playnite extension log (extensions.log).</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Success">ERROR test image generated:&#10;</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_ResultTitle">SharpMemories - Diagnostic result</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Exception">Generation failed: </sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_ErrorTitle">SharpMemories - Diagnostic error</sys:String>
+
+    <!-- Game window fingerprints -->
+    <sys:String x:Key="LOCSharpMemories_FP_Header">Per-game process and window fingerprints</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Hint">By default, saved data only helps rank candidates. Forced mode accepts only matching windows and never falls back. PIDs and HWNDs are not saved.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Refresh">Refresh games</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Observations">Recorded window observations (select one as preferred)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_UseSample">Use selected window as preferred</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Exe">Preferred full executable path (optional)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Title">Game window title contains (recommended)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Exclude">Exclude launcher window title containing (optional)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Class">Window class name (optional)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Force">Force match: only select windows matching these rules (no fallback)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Save">Save this game’s fingerprint rules</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_File">Fingerprints are stored in the plugin data directory as GameWindowFingerprints.xml for editing or backup.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_NeedTitle">Forced mode requires a preferred game window title or window class, to distinguish launchers from games.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Saved">Rules saved. Subsequent detection uses them immediately.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ExcludeSample">Exclude selected window as launcher</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_SaveFailed">Save failed. Check write permissions for the plugin data directory.</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Games">Games</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Search">Search game name or ID</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Mode">Matching mode</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModeNone">Automatic Mode (Settings below do not apply)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModePreferred">Preferred (use matching window if available; otherwise auto-detect)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModeForced">Forced (matching windows only)</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModeHint">Preferred mode waits for the matching window if it exists but is not foreground; it falls back only if no matching window exists.</sys:String>
 </ResourceDictionary>

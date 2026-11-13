@@ -1,4 +1,4 @@
-﻿<?xml version="1.0"?>
+<?xml version="1.0"?>
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
@@ -78,4 +78,45 @@
     <!-- Notification process filtering -->
     <sys:String x:Key="LOCSharpMemories_NotificationMode_AutoHint">自动截图通知按 Playnite 追踪的游戏进程筛选。只影响成功通知，不影响截图。</sys:String>
     <sys:String x:Key="LOCSharpMemories_NotificationMode_ManualHint">手动截图通知按按下快捷键时的前台进程筛选。只影响成功通知，不影响截图。</sys:String>
+    <!-- Process discovery and screenshot fallback -->
+    <sys:String x:Key="LOCSharpMemories_Settings_ProcessRecheckDelay">进程二次识别延迟（秒）：</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_ProcessRecheckHint">  启动时立即识别；延迟后附加扫描，失败时定期重试</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_AllowFullScreenCapture">允许手动截图回退到整个屏幕（默认关闭）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Settings_Tip_AllowFullScreenCapture">关闭时，F12 仅捕获经过验证且位于前台的游戏窗口；开启后，目标窗口无法捕获时可截取整个桌面。自动截图始终不会回退至全屏。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Header">高级诊断（一般无需操作）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Description">仅用于测试截图失败占位图；会在截图目录创建一张黑底白字 ERROR 图片，不改变截图计时。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_GenerateButton">生成 ERROR 测试图片…</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Confirmation">此操作会在截图目录生成一张黑底白字的 ERROR 测试图，并触发错误提示（如果可用）。&#10;&#10;不会真正截取游戏画面，也不会改变自动截图倒计时。&#10;&#10;确定继续？</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_ConfirmationTitle">SharpMemories - 高级诊断确认</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_NoViewModel">当前设置界面尚未绑定配置对象。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Failed">创建失败，请查看 Playnite 扩展日志（extensions.log）。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Success">已生成 ERROR 测试图片：&#10;</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_ResultTitle">SharpMemories - 诊断结果</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_Exception">生成失败：</sys:String>
+    <sys:String x:Key="LOCSharpMemories_Diagnostics_ErrorTitle">SharpMemories - 诊断错误</sys:String>
+
+    <!-- Game window fingerprints -->
+    <sys:String x:Key="LOCSharpMemories_FP_Header">每个游戏的进程和窗口指纹</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Hint">默认仅辅助识别；强制模式仅接受符合保存规则的窗口，不回退普通识别。PID 与 HWND 不会持久化。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Refresh">刷新游戏列表</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Observations">已记录的窗口样本（选中后可设为首选）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_UseSample">使用选中窗口作为首选</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Exe">首选可执行文件完整路径（可选）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Title">正式游戏窗口标题包含（建议填写）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Exclude">排除启动器窗口标题包含（可选）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Class">窗口类名（可选）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Force">强制匹配：仅使用以上规则选择窗口（不回退普通识别）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Save">保存该游戏的指纹规则</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_File">指纹另存为插件数据目录中的 GameWindowFingerprints.xml，可自行编辑或备份。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_NeedTitle">强制模式必须填写正式游戏标题或窗口类名，否则无法区分启动器与游戏。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Saved">已保存该游戏的识别规则；后续识别立即使用。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ExcludeSample">将选中窗口标记为启动器并排除</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_SaveFailed">保存失败，请检查插件数据目录的写入权限。</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Games">游戏列表</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Search">搜索游戏名称或 ID</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_Mode">匹配模式</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModeNone">自动模式（下述配置文件不生效）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModePreferred">优先模式（有匹配窗口优先，否则自动识别）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModeForced">强制模式（只使用匹配窗口）</sys:String>
+    <sys:String x:Key="LOCSharpMemories_FP_ModeHint">优先模式下，匹配窗口存在但不在前台时等待；没有匹配窗口才回退普通识别。</sys:String>
 </ResourceDictionary>

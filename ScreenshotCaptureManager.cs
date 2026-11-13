@@ -1,8 +1,11 @@
-﻿using Playnite.SDK;
+using Playnite.SDK;
 using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using System.Management;
 using System.Text;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -38,6 +41,138 @@ namespace SharpMemories
         private string cachedGameDirectory;
         private long cachedVerifiedAt;
         private static readonly long WindowReverifyTicks = Stopwatch.Frequency * 30L;
+        // Delayed process scan is an additional probe, never a startup wait.
+        private readonly object discoveryGate = new object();
+        private long sessionStartedTick;
+        private long nextSecondaryScanTick;
+        private bool secondaryFirstScanDone;
+        private readonly HashSet<int> secondaryCandidatePids = new HashSet<int>();
+        // Game action tracking/launch directories may differ from the library install path.
+        // Directory hints never authorize screenshots without a verified owning HWND.
+        private readonly List<string> gameDirectoryHints = new List<string>();
+        private string fingerprintGameId;
+        public void SetFingerprintGameId(string id)
+        {
+            bool changed;
+            lock (discoveryGate)
+            {
+                changed = !string.Equals(fingerprintGameId, id, StringComparison.Ordinal);
+                fingerprintGameId = id;
+            }
+            if (changed) ClearWindowCache();
+        }
+        private bool PassesFingerprint(IntPtr hwnd, int pid)
+        {
+            var store = GameFingerprintStore.Current;
+            if (store == null) return true;
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            if (string.IsNullOrWhiteSpace(id)) return true;
+            return store.MatchesForced(id, GetProcessImagePath(pid), ReadWindowTitle(hwnd), ReadWindowClass(hwnd));
+        }
+        private bool IsAuthorizedWindow(IntPtr hwnd, int pid, int launchPid, string gameDir)
+        {
+            if (IsVerifiedGameProcess(pid, launchPid, gameDir)) return true;
+            var store = GameFingerprintStore.Current;
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            var r = store?.Get(id);
+            // Only an explicit, fully qualified executable path paired with a
+            // window-title/class rule can authorize an out-of-directory process.
+            return r != null && r.ForceMatch &&
+                !string.IsNullOrWhiteSpace(r.PreferredExecutablePath) &&
+                GameFingerprintStore.IsForceRuleUsable(r) &&
+                store.MatchesForced(id, GetProcessImagePath(pid), ReadWindowTitle(hwnd), ReadWindowClass(hwnd));
+        }
+        private bool IsFingerprintForced()
+        {
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            return GameFingerprintStore.Current?.Get(id)?.ForceMatch == true;
+        }
+        private int FingerprintMode()
+        {
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            return GameFingerprintStore.Current?.GetMatchMode(id) ?? 0;
+        }
+        private bool IsPreferredFingerprint(IntPtr hwnd, int pid)
+        {
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            return GameFingerprintStore.Current?.MatchesPreferred(id,
+                GetProcessImagePath(pid), ReadWindowTitle(hwnd), ReadWindowClass(hwnd)) == true;
+        }
+        // Preferred mode discovers matching windows before falling back to normal
+        // selection. A matching background window does not permit a foreground-only
+        // screenshot: the countdown remains paused until the target is foreground.
+        private IntPtr FindPreferredWindow(int launchPid, string gameDir, bool foregroundOnly, IntPtr foreground)
+        {
+            IntPtr best = IntPtr.Zero;
+            int bestPid = 0;
+            int bestScore = int.MinValue;
+            EnumWindows((hwnd, _) =>
+            {
+                if (!IsWindowVisible(hwnd) || IsIconic(hwnd) ||
+                    GetWindow(hwnd, GW_OWNER) != IntPtr.Zero ||
+                    string.IsNullOrWhiteSpace(ReadWindowTitle(hwnd))) return true;
+                int pid = GetWindowProcessId(hwnd);
+                if (!IsAuthorizedWindow(hwnd, pid, launchPid, gameDir) ||
+                    !IsPreferredFingerprint(hwnd, pid)) return true;
+                int score = FingerprintScore(hwnd, pid);
+                if (best == IntPtr.Zero || score > bestScore)
+                {
+                    best = hwnd; bestPid = pid; bestScore = score;
+                }
+                return true;
+            }, IntPtr.Zero);
+            if (best != IntPtr.Zero)
+            {
+                if (foregroundOnly && best != foreground) return new IntPtr(-1); // wait, not fallback
+                CacheGameWindow(best, bestPid, launchPid, gameDir);
+                logger.Debug($"WindowResolver: preferred fingerprint PID={bestPid}, HWND={best}, title='{ReadWindowTitle(best)}'");
+            }
+            return best;
+        }
+        private int FingerprintScore(IntPtr hwnd, int pid)
+        {
+            if (FingerprintMode() == 0) return 0;
+            var store = GameFingerprintStore.Current;
+            if (store == null) return 0;
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            return store.GetHintScore(id, GetProcessImagePath(pid), ReadWindowTitle(hwnd),
+                ReadWindowClass(hwnd), GetWindowWidth(hwnd), GetWindowHeight(hwnd),
+                GetWindowLong(hwnd, -16), GetWindowLong(hwnd, -20));
+        }
+        private void LearnWindow(IntPtr hwnd, int pid)
+        {
+            var store = GameFingerprintStore.Current;
+            if (store == null) return;
+            string id;
+            lock (discoveryGate) id = fingerprintGameId;
+            store.Observe(id, GetProcessImagePath(pid), ReadWindowTitle(hwnd), ReadWindowClass(hwnd),
+                GetWindowWidth(hwnd), GetWindowHeight(hwnd),
+                GetWindowLong(hwnd, -16), GetWindowLong(hwnd, -20));
+        }
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hwnd, int index);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int maxCount);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetWindowRect(IntPtr hwnd, out WindowRect rect);
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WindowRect { public int Left, Top, Right, Bottom; }
+        private static string ReadWindowClass(IntPtr hwnd)
+        {
+            var buffer = new StringBuilder(256);
+            return hwnd != IntPtr.Zero && GetClassName(hwnd, buffer, buffer.Capacity) > 0 ? buffer.ToString() : "";
+        }
+        private static int GetWindowWidth(IntPtr hwnd) => GetWindowRect(hwnd, out WindowRect r) ? r.Right-r.Left : 0;
+        private static int GetWindowHeight(IntPtr hwnd) => GetWindowRect(hwnd, out WindowRect r) ? r.Bottom-r.Top : 0;
+        private string lastProcessProblem;
+        private string lastProcessAccepted;
+        private const int SecondaryScanRepeatSeconds = 15;
 
 
         private TimeSpan GetInterval()
@@ -171,11 +306,47 @@ namespace SharpMemories
         // A window is verified only when its PID equals the launch PID or its
         // executable resides inside the explicit game directory. Do not match
         // translated game titles or unrelated foreground processes by title.
-        private static bool IsVerifiedGameProcess(int windowPid, int launchPid, string gameDir)
+        private bool IsVerifiedGameProcess(int windowPid, int launchPid, string gameDir)
         {
             if (windowPid <= 0) return false;
-            if (windowPid == launchPid) return true;
-            return IsExeInsideDirectory(GetProcessImagePath(windowPid), gameDir);
+            // The launcher PID is not sufficient evidence when a game directory is known.
+            // This prevents capturing an unrelated launcher screen or arbitrary window.
+            if (windowPid == launchPid && NormalizeDirectory(gameDir) == null) return true;
+            string executable = GetProcessImagePath(windowPid);
+            if (IsExeInsideDirectory(executable, gameDir)) return true;
+            lock (discoveryGate)
+                return gameDirectoryHints.Any(directory => IsExeInsideDirectory(executable, directory));
+        }
+
+        // Called by the Playnite lifecycle, with directories derived from the
+        // *expanded launch action*, rather than trusting InstallDirectory alone.
+        public void SetGameDirectories(IEnumerable<string> directories)
+        {
+            var normalized = (directories ?? Enumerable.Empty<string>())
+                .Select(NormalizeDirectory)
+                .Where(path => path != null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            lock (discoveryGate)
+            {
+                gameDirectoryHints.Clear();
+                gameDirectoryHints.AddRange(normalized);
+                secondaryCandidatePids.Clear();
+                secondaryFirstScanDone = false;
+                nextSecondaryScanTick = 0;
+            }
+            ClearWindowCache();
+            logger.Info($"Game process discovery directories: {string.Join("; ", normalized)}");
+        }
+
+        private List<string> GetScanDirectories(string gameDir)
+        {
+            var roots = new List<string>();
+            var primary = NormalizeDirectory(gameDir);
+            if (primary != null) roots.Add(primary);
+            lock (discoveryGate)
+                roots.AddRange(gameDirectoryHints);
+            return roots.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private void ClearWindowCache()
@@ -215,7 +386,7 @@ namespace SharpMemories
                     pid == 0 || pid != cachedGameWindowPid ||
                     cachedLaunchPid != launchPid ||
                     !string.Equals(cachedGameDirectory, normalizedDir, StringComparison.OrdinalIgnoreCase) ||
-                    string.IsNullOrWhiteSpace(ReadWindowTitle(hwnd)))
+                    string.IsNullOrWhiteSpace(ReadWindowTitle(hwnd)) || !PassesFingerprint(hwnd, pid))
                 {
                     cachedGameWindow = IntPtr.Zero;
                     return IntPtr.Zero;
@@ -223,7 +394,7 @@ namespace SharpMemories
                 long now = Stopwatch.GetTimestamp();
                 if (now - cachedVerifiedAt >= WindowReverifyTicks)
                 {
-                    if (!IsVerifiedGameProcess(pid, launchPid, gameDir))
+                    if (!IsAuthorizedWindow(hwnd, pid, launchPid, gameDir))
                     {
                         cachedGameWindow = IntPtr.Zero;
                         return IntPtr.Zero;
@@ -234,10 +405,103 @@ namespace SharpMemories
             }
         }
 
+        private void ResetDiscovery()
+        {
+            lock (discoveryGate)
+            {
+                sessionStartedTick = Stopwatch.GetTimestamp();
+                nextSecondaryScanTick = 0;
+                secondaryFirstScanDone = false;
+                secondaryCandidatePids.Clear();
+                lastProcessProblem = null;
+                lastProcessAccepted = null;
+            }
+        }
+
+        // PlayState-inspired directory-based WMI inventory. We still REQUIRE a real,
+        // visible, verified HWND; a WMI row by itself never authorizes a screenshot.
+        // This runs on the capture worker, only after the configurable delay.
+        private void SecondaryScanIfDue(string gameDir, bool force = false)
+        {
+            var roots = GetScanDirectories(gameDir);
+            if (roots.Count == 0) return;
+            long now = Stopwatch.GetTimestamp();
+            int seconds = Math.Max(0, Math.Min(3600, settings?.Settings?.ProcessRecheckDelaySeconds ?? 20));
+            lock (discoveryGate)
+            {
+                if (!force && now - sessionStartedTick < seconds * (long)Stopwatch.Frequency) return;
+                if (!force && secondaryFirstScanDone && now < nextSecondaryScanTick) return;
+                secondaryFirstScanDone = true;
+                nextSecondaryScanTick = now + SecondaryScanRepeatSeconds * (long)Stopwatch.Frequency;
+            }
+            var found = new HashSet<int>();
+            try
+            {
+                using (var search = new ManagementObjectSearcher(
+                    "SELECT ProcessId, ExecutablePath FROM Win32_Process"))
+                using (var rows = search.Get())
+                {
+                    foreach (ManagementObject row in rows)
+                    {
+                        using (row)
+                        {
+                            string path = row["ExecutablePath"] as string;
+                            if (!roots.Any(root => IsExeInsideDirectory(path, root))) continue;
+                            object value = row["ProcessId"];
+                            if (value == null) continue;
+                            long pid = Convert.ToInt64(value);
+                            if (pid > 0 && pid <= int.MaxValue) found.Add((int)pid);
+                        }
+                    }
+                }
+                lock (discoveryGate)
+                {
+                    // Replacing candidate inventory is safe: it is NOT a window
+                    // validity signal, nor permission to pause the countdown.
+                    secondaryCandidatePids.Clear();
+                    foreach (int id in found) secondaryCandidatePids.Add(id);
+                }
+                logger.Debug($"Secondary game-process scan: candidates={found.Count}, directories='{string.Join("; ", roots)}'");
+            }
+            catch (Exception ex)
+            {
+                // WMI is optional: immediate Win32 HWND/path detection remains available.
+                logger.Debug($"Secondary game-process scan unavailable: {ex.Message}");
+            }
+        }
+
+        private void TraceProcessState(string issue, string accepted = null)
+        {
+            lock (discoveryGate)
+            {
+                if (issue != null)
+                {
+                    if (!string.Equals(lastProcessProblem, issue, StringComparison.Ordinal))
+                        logger.Warn(issue);
+                    lastProcessProblem = issue;
+                    lastProcessAccepted = null;
+                }
+                else
+                {
+                    if (lastProcessProblem != null)
+                        logger.Info($"Game process recovered: {accepted ?? "(unknown)"}");
+                    lastProcessProblem = null;
+                    lastProcessAccepted = accepted;
+                }
+            }
+        }
+
         private IntPtr ResolveGameWindow(int launchPid, string gameDir, bool preferForeground)
         {
             IntPtr foreground = GetForegroundWindow();
             IntPtr cached = GetCachedGameWindow(launchPid, gameDir);
+            if (FingerprintMode() == 1)
+            {
+                IntPtr preferred = FindPreferredWindow(launchPid, gameDir, preferForeground, foreground);
+                if (preferred == new IntPtr(-1)) return IntPtr.Zero;
+                if (preferred != IntPtr.Zero) return preferred;
+                // No preferred window exists: ordinary immediate/secondary discovery.
+            }
             if (foreground != IntPtr.Zero && foreground == cached)
                 return foreground;
 
@@ -246,29 +510,54 @@ namespace SharpMemories
             int foregroundPid = GetWindowProcessId(foreground);
             if (foreground != IntPtr.Zero && IsWindowVisible(foreground) &&
                 !IsIconic(foreground) &&
-                IsVerifiedGameProcess(foregroundPid, launchPid, gameDir))
+                IsAuthorizedWindow(foreground, foregroundPid, launchPid, gameDir))
             {
-                CacheGameWindow(foreground, foregroundPid, launchPid, gameDir);
-                logger.Debug($"WindowResolver: foreground verified, PID={foregroundPid}, " +
-                    $"HWND={foreground}, title='{ReadWindowTitle(foreground)}'");
-                return foreground;
+                // Observe both launcher and game windows, even when forced rules
+                // intentionally exclude one of them from being captured.
+                LearnWindow(foreground, foregroundPid);
+                if (PassesFingerprint(foreground, foregroundPid))
+                {
+                    CacheGameWindow(foreground, foregroundPid, launchPid, gameDir);
+                    logger.Debug($"WindowResolver: foreground verified, PID={foregroundPid}, " +
+                        $"HWND={foreground}, title='{ReadWindowTitle(foreground)}'");
+                    return foreground;
+                }
             }
             if (preferForeground) return IntPtr.Zero;
-            if (cached != IntPtr.Zero) return cached;
+            if (cached != IntPtr.Zero)
+            {
+                // A secondary inventory is merely a source of *candidates*.
+                // It must never evict an already verified, still-valid HWND.
+                // In particular, WMI discovery can race with launcher->game
+                // transitions and cannot prove that a cached HWND has died.
+                return cached;
+            }
 
-            // Full window enumeration only on cache miss or invalidation.
+            // Full window enumeration on cache miss or invalidation. A secondary
+            // WMI scan may prioritize the actual game over a persistent launcher.
+            HashSet<int> candidates;
+            lock (discoveryGate) candidates = new HashSet<int>(secondaryCandidatePids);
             IntPtr result = IntPtr.Zero;
             int selectedPid = 0;
+            int bestScore = int.MinValue;
             EnumWindows((hwnd, _) =>
             {
                 if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd) || IsIconic(hwnd) ||
                     GetWindow(hwnd, GW_OWNER) != IntPtr.Zero) return true;
                 if (string.IsNullOrWhiteSpace(ReadWindowTitle(hwnd))) return true;
                 int ownerPid = GetWindowProcessId(hwnd);
-                if (!IsVerifiedGameProcess(ownerPid, launchPid, gameDir)) return true;
-                result = hwnd;
-                selectedPid = ownerPid;
-                return false;
+                if (!IsAuthorizedWindow(hwnd, ownerPid, launchPid, gameDir)) return true;
+                LearnWindow(hwnd, ownerPid);
+                if (!PassesFingerprint(hwnd, ownerPid)) return true;
+                int score = FingerprintScore(hwnd, ownerPid) +
+                    (candidates.Contains(ownerPid) ? 10 : 0) + (ownerPid != launchPid ? 3 : 0);
+                if (result == IntPtr.Zero || score > bestScore)
+                {
+                    result = hwnd;
+                    selectedPid = ownerPid;
+                    bestScore = score;
+                }
+                return true;
             }, IntPtr.Zero);
             if (result != IntPtr.Zero)
             {
@@ -360,42 +649,23 @@ namespace SharpMemories
         /// <summary>
         /// 自动截图黑名单：检查 Playnite 追踪的游戏 PID。
         /// </summary>
-        private bool IsAutoScreenshotBlocked(int processId)
+        // Process policies are evaluated against the VERIFIED game window owner,
+        // not the short-lived Playnite launch PID.
+        private bool IsAutoScreenshotBlocked(int verifiedGamePid)
         {
-            string processName = GetProcessFileName(processId);
-
+            string processName = GetProcessFileName(verifiedGamePid);
             if (string.IsNullOrEmpty(processName))
             {
-                logger.Warn(
-                    $"Auto capture skipped: unable to identify PID {processId}");
-
+                TraceProcessState($"Auto capture waiting: verified game PID {verifiedGamePid} unavailable");
                 return true;
             }
-
-            var currentSettings = settings?.Settings;
-
-            if (currentSettings == null)
-            {
-                logger.Warn(
-                    "Auto screenshot skipped: settings unavailable");
-
-                return true;
-            }
-
-            bool blocked =
-                currentSettings.IsAutoScreenshotProcessBlocked(processName);
-
+            var current = settings?.Settings;
+            if (current == null) return true;
+            bool blocked = current.IsAutoScreenshotProcessBlocked(processName);
             if (blocked)
-            {
-                string modeName =
-                    currentSettings.AutoScreenshotProcessMode == 1
-                        ? "Whitelist"
-                        : "Blacklist";
-
-                logger.Info(
-                    $"Auto screenshot blocked by {modeName} mode: {processName}");
-            }
-
+                TraceProcessState($"Auto screenshot blocked by process policy: {processName}");
+            else
+                TraceProcessState(null, processName);
             return blocked;
         }
 
@@ -452,6 +722,7 @@ namespace SharpMemories
         {
             StopCapture();
             ClearWindowCache();
+            ResetDiscovery();
             lock (captureLock)
             {
                 currentGameProcessId = processId;
@@ -487,6 +758,12 @@ namespace SharpMemories
                 if (oldCts != null) oldCts.Cancel();
             }
             ClearWindowCache();
+            lock (discoveryGate)
+            {
+                secondaryCandidatePids.Clear();
+                gameDirectoryHints.Clear();
+                fingerprintGameId = null;
+            }
             ScreenCapture.StopSystemStateMonitor();
             // Never block the Playnite UI thread. Dispose after the old worker has exited.
             if (oldCts != null)
@@ -497,7 +774,7 @@ namespace SharpMemories
             }
         }
 
-        public void CaptureOnDemand(int processId, string gameTitle)
+        public void CaptureOnDemand(int processId, string gameTitle, string gameDirectory = null)
         {
             logger.Info(
                 $"On-demand screenshot capture triggered for '{gameTitle}'");
@@ -505,8 +782,18 @@ namespace SharpMemories
                 "ManualCapture.Triggered",
                 false);
 
-            // 在按键时固定前台进程名，截图和通知使用同一份结果。
-            string foregroundProcessName = GetForegroundProcessFileName();
+            // Without explicit permission for full-screen capture, manual hotkey
+            // must target the VERIFIED foreground game window only.
+            bool fullScreen = (settings?.Settings?.AllowFullScreenCapture ?? false) && !IsFingerprintForced();
+            IntPtr gameWindow = ResolveGameWindow(processId, gameDirectory, !fullScreen);
+            string foregroundProcessName = fullScreen
+                ? GetForegroundProcessFileName()
+                : GetProcessFileName(GetWindowProcessId(gameWindow));
+            if (!fullScreen && (gameWindow == IntPtr.Zero || gameWindow != GetForegroundWindow()))
+            {
+                logger.Debug($"Manual capture skipped: game is not the foreground window ('{gameTitle}')");
+                return;
+            }
             if (IsManualScreenshotBlocked(foregroundProcessName))
             {
                 messagesHandler?.TraceNotification(
@@ -520,7 +807,7 @@ namespace SharpMemories
             }
 
             string savedPath =
-                CaptureOnce(processId, gameTitle, false);
+                CaptureOnce(processId, gameTitle, false, default(CancellationToken), gameDirectory);
 
             messagesHandler?.TraceNotification(
                 string.IsNullOrEmpty(savedPath)
@@ -641,7 +928,7 @@ namespace SharpMemories
                                 try
                                 {
                                     messagesHandler?.ShowScreenshotNotification(gameTitle,
-                                        savedPath, true, GetProcessFileName(processId));
+                                        savedPath, true, GetCurrentGameProcessName(processId, gameTitle));
                                 }
                                 catch (Exception ex) { logger.Error(ex, "Auto screenshot notification failed"); }
                             }
@@ -669,16 +956,6 @@ namespace SharpMemories
         {
             logger.Debug($"🔍 CanPerformAutoScreenshot() for '{gameTitle}' (PID: {processId})");
 
-            // 优先检查自动截图黑名单。
-            // 匹配 Playnite 正在追踪的游戏进程。
-            if (IsAutoScreenshotBlocked(processId))
-            {
-                logger.Debug(
-                    $"Auto screenshot skipped by process mode: {gameTitle}");
-
-                return false;
-            }
-
             // 1. 检查系统是否锁屏或息屏
             bool canTake = ScreenCapture.CanTakeScreenshot();
             logger.Debug($"   ├─ ScreenCapture.CanTakeScreenshot(): {canTake}");
@@ -697,15 +974,29 @@ namespace SharpMemories
             IntPtr gameWindow = ResolveGameWindow(processId, gameDir, !allowBackground);
             if (gameWindow == IntPtr.Zero)
             {
-                // Normal pause (e.g. Alt+Tab), not a failure. CaptureLoop
-                // records the paused/resumed state once per transition.
-                return false;
+                // Only perform the costly delayed scan when no verified HWND exists.
+                // A successful, verified window never depends on scan completion.
+                SecondaryScanIfDue(gameDir);
+                gameWindow = ResolveGameWindow(processId, gameDir, !allowBackground);
+                if (gameWindow == IntPtr.Zero)
+                {
+                    TraceProcessState($"Auto capture waiting for verified game window: '{gameTitle}'");
+                    return false;
+                }
             }
+            int actualPid = GetWindowProcessId(gameWindow);
+            if (IsAutoScreenshotBlocked(actualPid)) return false;
             logger.Debug($"   ├─ Verified game window HWND={gameWindow}, " +
                 $"PID={GetWindowProcessId(gameWindow)}, title='{ReadWindowTitle(gameWindow)}'");
 
             logger.Debug($"   └─ ✅ All conditions met, allowing screenshot");
             return true;
+        }
+
+        private string GetCurrentGameProcessName(int launchPid, string title)
+        {
+            var hwnd = GetCachedGameWindow(launchPid, GetCurrentGameDirectory(launchPid, title));
+            return GetProcessFileName(GetWindowProcessId(hwnd));
         }
 
         // Revalidate right before and after rendering: a window may be destroyed
@@ -737,13 +1028,15 @@ namespace SharpMemories
         }
 
         // 修改：返回保存的文件路径
-        private string CaptureOnce(int processId, string gameTitle, bool isAutoCapture, CancellationToken token = default(CancellationToken))
+        private string CaptureOnce(int processId, string gameTitle, bool isAutoCapture,
+            CancellationToken token = default(CancellationToken), string manualGameDir = null)
         {
             lock (screenshotSaveLock)
-                return CaptureOnceCore(processId, gameTitle, isAutoCapture, token);
+                return CaptureOnceCore(processId, gameTitle, isAutoCapture, token, manualGameDir);
         }
 
-        private string CaptureOnceCore(int processId, string gameTitle, bool isAutoCapture, CancellationToken token)
+        private string CaptureOnceCore(int processId, string gameTitle, bool isAutoCapture,
+            CancellationToken token, string manualGameDir)
         {
             string savedPath = null;
             Bitmap bmp = null;
@@ -752,13 +1045,6 @@ namespace SharpMemories
             int renderingWindowPid = 0;
             bool renderingBackgroundAllowed = false;
             bool rendererEntered = false;
-
-            // 自动截图再次确认黑名单，防止进入截图流程前
-            // 黑名单发生变化，或其他调用路径绕过条件检查。
-            if (isAutoCapture && IsAutoScreenshotBlocked(processId))
-            {
-                return null;
-            }
 
             try
             {
@@ -781,6 +1067,7 @@ namespace SharpMemories
                         return null;
                     }
                     int ownerPid = GetWindowProcessId(window);
+                    if (IsAutoScreenshotBlocked(ownerPid)) return null;
                     if (!IsAutoCaptureWindowCurrent(window, ownerPid, processId,
                         gameTitle, token, backgroundAllowed))
                     {
@@ -815,32 +1102,28 @@ namespace SharpMemories
                 }
                 else
                 {
-                    // Preserve the original manual screenshot behavior.
-                    if (processId > 0)
+                    bool fullScreen = (settings?.Settings?.AllowFullScreenCapture ?? false) && !IsFingerprintForced();
+                    IntPtr window = ResolveGameWindow(processId, manualGameDir, !fullScreen);
+                    if (window != IntPtr.Zero && (fullScreen || GetForegroundWindow() == window))
                     {
-                        try
+                        int ownerPid = GetWindowProcessId(window);
+                        if (IsAuthorizedWindow(window, ownerPid, processId, manualGameDir))
                         {
-                            using (var proc = Process.GetProcessById(processId))
-                            {
-                                var h = proc.MainWindowHandle;
-                                if (h != IntPtr.Zero)
-                                {
-                                    logger.Debug($"Attempting manual window capture for process {processId}");
-                                    bmp = ScreenCapture.CaptureWindow(h);
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.Debug($"Failed to capture manual game window: {ex.Message}");
+                            logger.Debug($"Capturing verified manual game HWND={window}, PID={ownerPid}");
+                            bmp = ScreenCapture.CaptureWindow(window, ScreenCapture.IsWindowForeground(window));
                         }
                     }
-                }
-
-                if (bmp == null && !isAutoCapture)
-                {
-                    logger.Debug("Performing full screen capture");
-                    bmp = ScreenCapture.CaptureScreen();
+                    if (bmp == null && fullScreen)
+                    {
+                        logger.Info("Manual full-screen fallback enabled by user");
+                        bmp = ScreenCapture.CaptureScreen();
+                    }
+                    else if (bmp == null)
+                    {
+                        // A missing/invalid game window is not an attempted render failure.
+                        logger.Debug("Manual capture skipped: no valid game frame; full-screen fallback disabled");
+                        return null;
+                    }
                 }
 
                 if (bmp == null)

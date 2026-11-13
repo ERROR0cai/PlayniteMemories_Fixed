@@ -13,16 +13,16 @@ namespace SharpMemories
         [DllImport("user32.dll")]
         private static extern IntPtr GetDesktopWindow();
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr GetWindowDC(IntPtr hWnd);
 
         [DllImport("user32.dll")]
         private static extern IntPtr ReleaseDC(IntPtr hWnd, IntPtr hDC);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         [DllImport("gdi32.dll")]
@@ -34,7 +34,7 @@ namespace SharpMemories
         [DllImport("gdi32.dll")]
         private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
 
-        [DllImport("gdi32.dll")]
+        [DllImport("gdi32.dll", SetLastError = true)]
         private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
             IntPtr hdcSrc, int nXSrc, int nYSrc, System.Int32 dwRop);
 
@@ -325,121 +325,148 @@ namespace SharpMemories
         }
 
         /// <summary>
-        /// Captures a window using multiple methods with fallback logic
+        /// Capture only a verified target window. An on-screen region fallback is
+        /// permitted solely for the *actual foreground* HWND, never in background.
+        /// This does NOT grant permission to capture an unrelated full desktop.
         /// </summary>
         public static Bitmap CaptureWindow(IntPtr hWnd, bool allowBitBlt = true)
         {
-            Bitmap result = null;
+            if (hWnd == IntPtr.Zero) return null;
+            string problem;
+            Bitmap result = CaptureWithPrintWindow(hWnd, PW_RENDERFULLCONTENT, out problem);
+            if (AcceptFrame(result, "PrintWindow(full)", hWnd, problem, out result)) return result;
 
-            result = CaptureWithPrintWindow(hWnd, PW_RENDERFULLCONTENT);
-            if (IsValidScreenshot(result))
-                return result;
-            result?.Dispose();
+            result = CaptureWithPrintWindow(hWnd, PW_CLIENTONLY, out problem);
+            if (AcceptFrame(result, "PrintWindow(client)", hWnd, problem, out result)) return result;
 
-            result = CaptureWithPrintWindow(hWnd, PW_CLIENTONLY);
-            if (IsValidScreenshot(result))
-                return result;
-            result?.Dispose();
-
-            // BitBlt of a covered/background window may include another app.
-            if (allowBitBlt)
+            // Background BitBlt risks capturing a covering application.
+            if (allowBitBlt && GetForegroundWindow() == hWnd)
             {
-                result = CaptureWithBitBlt(hWnd);
-                if (IsValidScreenshot(result)) return result;
-                result?.Dispose();
-            }
+                result = CaptureWithBitBlt(hWnd, out problem);
+                if (AcceptFrame(result, "BitBlt(window DC)", hWnd, problem, out result)) return result;
 
+                // Some OpenGL/Java games do not expose current pixels through
+                // PrintWindow/GetWindowDC. Capture ONLY the verified foreground
+                // window's on-screen bounds, and only if fully visible on screen.
+                result = CaptureForegroundWindowRegion(hWnd, out problem);
+                if (AcceptFrame(result, "CopyFromScreen(window bounds)", hWnd, problem, out result)) return result;
+            }
+            else
+            {
+                logger.Debug($"Window capture HWND={hWnd}: foreground-only fallbacks disabled " +
+                    $"(allowBitBlt={allowBitBlt}, isForeground={GetForegroundWindow() == hWnd})");
+            }
+            logger.Warn($"Window capture failed for HWND={hWnd}: all permitted capture methods failed");
             return null;
         }
 
-        /// <summary>
-        /// Captures window using PrintWindow API
-        /// </summary>
-        private static Bitmap CaptureWithPrintWindow(IntPtr hWnd, uint flags)
+        private static bool AcceptFrame(Bitmap image, string method, IntPtr hwnd,
+            string failure, out Bitmap accepted)
         {
-            IntPtr hdcSrc = IntPtr.Zero;
-            IntPtr hdcDest = IntPtr.Zero;
-            IntPtr hBitmap = IntPtr.Zero;
-            IntPtr hOld = IntPtr.Zero;
+            if (IsValidScreenshot(image))
+            {
+                logger.Debug($"Window capture succeeded: method={method}, HWND={hwnd}, " +
+                    $"size={image.Width}x{image.Height}");
+                accepted = image;
+                return true;
+            }
+            logger.Debug($"Window capture rejected: method={method}, HWND={hwnd}, " +
+                $"reason={(image == null ? (failure ?? "no bitmap") : "uniform/invalid frame")}");
+            image?.Dispose();
+            accepted = null;
+            return false;
+        }
 
+        private static Bitmap CaptureWithPrintWindow(IntPtr hwnd, uint flags, out string failure)
+        {
+            failure = null;
+            IntPtr source = IntPtr.Zero, dest = IntPtr.Zero, dib = IntPtr.Zero, original = IntPtr.Zero;
             try
             {
-                Rectangle rect = GetWindowRectangle(hWnd);
-                if (rect.Width <= 0 || rect.Height <= 0) return null;
-
-                hdcSrc = GetWindowDC(hWnd);
-                if (hdcSrc == IntPtr.Zero) return null;
-
-                hdcDest = CreateCompatibleDC(hdcSrc);
-                if (hdcDest == IntPtr.Zero) return null;
-                hBitmap = CreateCompatibleBitmap(hdcSrc, rect.Width, rect.Height);
-                if (hBitmap == IntPtr.Zero) return null;
-                hOld = SelectObject(hdcDest, hBitmap);
-
-                bool success = PrintWindow(hWnd, hdcDest, flags);
-                if (!success) return null;
-
-                using (var img = Image.FromHbitmap(hBitmap))
-                {
-                    return new Bitmap(img);
-                }
+                Rectangle rect = GetWindowRectangle(hwnd);
+                if (rect.Width <= 0 || rect.Height <= 0) { failure = "invalid bounds"; return null; }
+                source = GetWindowDC(hwnd);
+                if (source == IntPtr.Zero) { failure = "GetWindowDC failed, win32=" + Marshal.GetLastWin32Error(); return null; }
+                dest = CreateCompatibleDC(source);
+                if (dest == IntPtr.Zero) { failure = "CreateCompatibleDC failed"; return null; }
+                dib = CreateCompatibleBitmap(source, rect.Width, rect.Height);
+                if (dib == IntPtr.Zero) { failure = "CreateCompatibleBitmap failed"; return null; }
+                original = SelectObject(dest, dib);
+                if (original == IntPtr.Zero || original == new IntPtr(-1))
+                { failure = "SelectObject failed"; return null; }
+                if (!PrintWindow(hwnd, dest, flags))
+                { failure = "PrintWindow returned false, win32=" + Marshal.GetLastWin32Error(); return null; }
+                using (var image = Image.FromHbitmap(dib)) return new Bitmap(image);
             }
-            catch
-            {
-                return null;
-            }
+            catch (Exception ex) { failure = ex.GetType().Name + ": " + ex.Message; return null; }
             finally
             {
-                if (hOld != IntPtr.Zero) SelectObject(hdcDest, hOld);
-                if (hBitmap != IntPtr.Zero) DeleteObject(hBitmap);
-                if (hdcDest != IntPtr.Zero) DeleteDC(hdcDest);
-                if (hdcSrc != IntPtr.Zero) ReleaseDC(hWnd, hdcSrc);
+                if (original != IntPtr.Zero && original != new IntPtr(-1)) SelectObject(dest, original);
+                if (dib != IntPtr.Zero) DeleteObject(dib);
+                if (dest != IntPtr.Zero) DeleteDC(dest);
+                if (source != IntPtr.Zero) ReleaseDC(hwnd, source);
             }
         }
 
-        /// <summary>
-        /// Captures window using BitBlt
-        /// </summary>
-        private static Bitmap CaptureWithBitBlt(IntPtr hWnd)
+        private static Bitmap CaptureWithBitBlt(IntPtr hwnd, out string failure)
         {
-            IntPtr hdcSrc = IntPtr.Zero;
-            IntPtr hdcDest = IntPtr.Zero;
-            IntPtr hBitmap = IntPtr.Zero;
-            IntPtr hOld = IntPtr.Zero;
-
+            failure = null;
+            IntPtr source = IntPtr.Zero, dest = IntPtr.Zero, dib = IntPtr.Zero, original = IntPtr.Zero;
             try
             {
-                hdcSrc = GetWindowDC(hWnd);
-                if (hdcSrc == IntPtr.Zero) return null;
-
-                Rectangle rect = GetWindowRectangle(hWnd);
-                if (rect.Width <= 0 || rect.Height <= 0) return null;
-
-                hdcDest = CreateCompatibleDC(hdcSrc);
-                if (hdcDest == IntPtr.Zero) return null;
-                hBitmap = CreateCompatibleBitmap(hdcSrc, rect.Width, rect.Height);
-                if (hBitmap == IntPtr.Zero) return null;
-                hOld = SelectObject(hdcDest, hBitmap);
-
-                var success = BitBlt(hdcDest, 0, 0, rect.Width, rect.Height, hdcSrc, 0, 0, SRCCOPY);
-                if (!success) return null;
-
-                using (var img = Image.FromHbitmap(hBitmap))
-                {
-                    return new Bitmap(img);
-                }
+                Rectangle rect = GetWindowRectangle(hwnd);
+                if (rect.Width <= 0 || rect.Height <= 0) { failure = "invalid bounds"; return null; }
+                source = GetWindowDC(hwnd);
+                if (source == IntPtr.Zero) { failure = "GetWindowDC failed, win32=" + Marshal.GetLastWin32Error(); return null; }
+                dest = CreateCompatibleDC(source);
+                if (dest == IntPtr.Zero) { failure = "CreateCompatibleDC failed"; return null; }
+                dib = CreateCompatibleBitmap(source, rect.Width, rect.Height);
+                if (dib == IntPtr.Zero) { failure = "CreateCompatibleBitmap failed"; return null; }
+                original = SelectObject(dest, dib);
+                if (original == IntPtr.Zero || original == new IntPtr(-1))
+                { failure = "SelectObject failed"; return null; }
+                if (!BitBlt(dest, 0, 0, rect.Width, rect.Height, source, 0, 0, SRCCOPY))
+                { failure = "BitBlt returned false, win32=" + Marshal.GetLastWin32Error(); return null; }
+                using (var image = Image.FromHbitmap(dib)) return new Bitmap(image);
             }
-            catch
-            {
-                return null;
-            }
+            catch (Exception ex) { failure = ex.GetType().Name + ": " + ex.Message; return null; }
             finally
             {
-                if (hOld != IntPtr.Zero) SelectObject(hdcDest, hOld);
-                if (hBitmap != IntPtr.Zero) DeleteObject(hBitmap);
-                if (hdcDest != IntPtr.Zero) DeleteDC(hdcDest);
-                if (hdcSrc != IntPtr.Zero) ReleaseDC(hWnd, hdcSrc);
+                if (original != IntPtr.Zero && original != new IntPtr(-1)) SelectObject(dest, original);
+                if (dib != IntPtr.Zero) DeleteObject(dib);
+                if (dest != IntPtr.Zero) DeleteDC(dest);
+                if (source != IntPtr.Zero) ReleaseDC(hwnd, source);
             }
+        }
+
+        // Screen-space region only; never use PrimaryScreen.Bounds as a fallback
+        // for an unknown HWND. Avoid partially offscreen windows and size errors.
+        private static Bitmap CaptureForegroundWindowRegion(IntPtr hwnd, out string failure)
+        {
+            failure = null;
+            if (hwnd == IntPtr.Zero || GetForegroundWindow() != hwnd)
+            { failure = "window is not foreground"; return null; }
+            try
+            {
+                RECT native;
+                if (!GetWindowRect(hwnd, out native))
+                { failure = "GetWindowRect failed, win32=" + Marshal.GetLastWin32Error(); return null; }
+                var rect = Rectangle.FromLTRB(native.Left, native.Top, native.Right, native.Bottom);
+                Rectangle virtualScreen = System.Windows.Forms.SystemInformation.VirtualScreen;
+                if (rect.Width < 2 || rect.Height < 2 || !virtualScreen.Contains(rect))
+                { failure = "window outside visible virtual-screen bounds"; return null; }
+                Bitmap image = new Bitmap(rect.Width, rect.Height);
+                try
+                {
+                    using (Graphics g = Graphics.FromImage(image))
+                        g.CopyFromScreen(rect.Location, Point.Empty, rect.Size, CopyPixelOperation.SourceCopy);
+                    if (GetForegroundWindow() != hwnd)
+                    { failure = "foreground changed during region capture"; image.Dispose(); return null; }
+                    return image;
+                }
+                catch { image.Dispose(); throw; }
+            }
+            catch (Exception ex) { failure = ex.GetType().Name + ": " + ex.Message; return null; }
         }
 
         /// <summary>

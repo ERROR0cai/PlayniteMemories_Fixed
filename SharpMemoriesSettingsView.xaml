@@ -127,6 +127,18 @@
                     Margin="0,0,0,6"
                     ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_AllowBackgroundScreenshot}"/>
 
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,8" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_ProcessRecheckDelay}" VerticalAlignment="Center"/>
+                    <TextBox Width="65" Text="{Binding Settings.ProcessRecheckDelaySeconds, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="{DynamicResource LOCSharpMemories_Settings_ProcessRecheckHint}" Foreground="Gray"
+                               FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <CheckBox Content="{DynamicResource LOCSharpMemories_Settings_AllowFullScreenCapture}"
+                          IsChecked="{Binding Settings.AllowFullScreenCapture}"
+                          Margin="0,2,0,8"
+                          ToolTip="{DynamicResource LOCSharpMemories_Settings_Tip_AllowFullScreenCapture}"/>
+
                 <TextBlock
                     Text="{DynamicResource LOCSharpMemories_Settings_Tip_SystemPause}"
                     Foreground="Gray"
